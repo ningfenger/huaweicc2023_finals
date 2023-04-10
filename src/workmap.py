@@ -359,6 +359,8 @@ class Workmap:
         broad_road: 是否只能走宽路, 根据机器人手中是否 持有物品确定
         return: 返回路径, 为空说明无法避让
         '''
+        if len(work_path) == 0:
+            return []
         if not safe_dis:
             if broad_road:
                 safe_dis = 1.06
