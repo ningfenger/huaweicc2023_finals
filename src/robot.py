@@ -143,7 +143,6 @@ class Robot:
         dists = np.sqrt(np.sum((self.path - robot_pos) ** 2, axis=1))
         nearest_row = np.argmin(dists)
         row1 = min(nearest_row + 1, len(self.path) - 1)
-
         return row1
 
     def find_temp_tar_idx_path_input(self, path):  ####################

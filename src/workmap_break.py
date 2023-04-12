@@ -26,31 +26,30 @@ class Workmap:
     BROAD_ROAD = 3  # 宽路 瞄着中间走就行
     SUPER_BROAD_ROAD = 4  # 广路 可以冲刺
     PATH = 5  # 算法规划的路径，绘图用
+
     # TURNS = [(-1, 0), (1, 0), (0, 1), (0, -1)]
     TURNS = list(itertools.product([-1, 0, 1], repeat=2))  # 找路方向，原则: 尽量减少拐弯
     TURNS.remove((0, 0))
+    MIN_WORKBENCH = '1'
+    MAX_WORKBENCH = '9'
+    MIN_SELL_WORKBENCH = '4' # 最小的收购物品的工作台
+    ONLY_SELL_WORKBENCH = ['8', '9'] # 只收购物品的工作台
+    ROBOT_VALUE = 'A'
 
     def __init__(self, debug=False) -> None:
+        self.roads: List[set] = []  # 狭路集合
         self.map_data: List[str] = []  # 原始地图信息
         # 二值地图 0为空地 100为墙 50 为路径
+        self.robots_loc: dict = {}  # k 机器人坐标点 v 机器人ID
+        self.workbenchs_loc: dict = {}  # k 工作台坐标点 v 工作台ID
         self.map_gray = [[self.GROUND] * 100 for _ in range(100)]
         if debug:
             import matplotlib.pyplot as plt
             self.plt = plt
             self.draw_map = self.__draw_map
             self.draw_path = self.__draw_path
-        # 蓝队
-        self.buy_map_blue = {}  # 空手时到每个工作台的路径
-        self.sell_map_blue = {}  # 手持物品时到某个工作台的路径
-        self.robots_loc_blue: dict = {}  # k 机器人坐标点 v 机器人ID
-        self.workbenchs_loc_blue: dict = {}  # k 工作台坐标点 v (工作台类型, 工作台ID)
-
-        # 红队
-        self.buy_map_red = {}  # 空手时到每个工作台的路径
-        self.sell_map_red = {}  # 手持物品时到某个工作台的路径
-        self.robots_loc_red: dict = {}  # k 机器人坐标点 v 机器人ID
-        self.workbenchs_loc_red: dict = {}  # k 工作台坐标点 v (工作台类型, 工作台ID)
-
+        self.buy_map = {}  # 空手时到每个工作台的路径
+        self.sell_map = {}  # 手持物品时到某个工作台的路径
         self.unreanchble_warkbench = set()  # 记录不能正常使用的工作台
         self.broad_shifting = {}  # 有些特殊宽路的偏移量
 
@@ -60,15 +59,15 @@ class Workmap:
         '''
         x = 0.5 * j + 0.25
         y = (100 - i) * 0.5 - 0.25
-        return x, y
-
+        return x,y
+        
     @lru_cache(None)
     def loc_int2float(self, i: int, j: int, rode=False):
         '''
-        地图离散坐标转实际连续坐标, 导航时使用，某些路会附加偏移
+        地图离散坐标转实际连续坐标
         rode: 标识是否是窄路，窄路按原先右上角
         '''
-        x, y = self.loc_int2float_normal(i, j)
+        x, y =self.loc_int2float_normal(i, j)
         if rode:
             x += 0.25
             y -= 0.25
@@ -100,22 +99,19 @@ class Workmap:
         '''
         从标准输入读取地图
         '''
-        base_red = ord('a')-1  # 用于计算红色工作台ID
         for i in range(100):
             self.map_data.append(input())
             for j in range(100):
                 if self.map_data[i][j] == '#':  # 障碍
                     self.map_gray[i][j] = self.BLOCK
-                elif self.map_data[i][j] == 'A':  # 蓝队机器人
-                    self.robots_loc_blue[(i, j)] = len(self.robots_loc_blue)
-                elif self.map_data[i][j] == 'B':  # 红队机器人
-                    self.robots_loc_red[(i, j)] = len(self.robots_loc_red)
-                elif '1' <= self.map_data[i][j] <= '9':  # 蓝色工作台
-                    self.workbenchs_loc_blue[(i, j)] = (
-                        int(self.map_data[i][j]), len(self.workbenchs_loc_blue))
-                elif 'a' <= self.map_data[i][j] <= 'i':  # 红色工作台
-                    self.workbenchs_loc_red[(i, j)] = (
-                        ord(self.map_data[i][j])-base_red, len(self.workbenchs_loc_red))
+                elif self.map_data[i][j] == self.ROBOT_VALUE:  # 机器人
+                    x, y = self.loc_int2float_normal(i, j)
+                    self.robots_loc[(i, j)] = len(self.robots_loc)
+                    yield 'A', (x, y)
+                elif self.MIN_WORKBENCH <= self.map_data[i][j] <= self.MAX_WORKBENCH:  # 工作台
+                    x, y = self.loc_int2float_normal(i, j)
+                    self.workbenchs_loc[(i, j)] = len(self.workbenchs_loc)
+                    yield ord(self.map_data[i][j])-ord(self.MIN_WORKBENCH) + 1, (x, y)
         input()  # 读入ok
 
     def init_roads(self):
@@ -179,9 +175,7 @@ class Workmap:
                     if (i == 0 or j == 99 or self.map_gray[i - 1][j + 1] == self.BLOCK) and (
                             i == 99 or j == 0 or self.map_gray[i + 1][j - 1] == self.BLOCK):
                         self.map_gray[i][j] = self.GROUND
-        all_workbench = copy.copy(self.workbenchs_loc_red)
-        all_workbench.update(self.workbenchs_loc_blue)
-        for (i, j), (w_type, _) in all_workbench.items():  # 集中处理工作台
+        for i, j in self.workbenchs_loc:  # 集中处理工作台
             if self.map_gray[i][j] == self.BROAD_ROAD:
                 continue
             tmp_blocks = []  # 十字区域障碍
@@ -192,14 +186,14 @@ class Workmap:
                 self.unreanchble_warkbench.add((i, j))
                 continue
             elif len(tmp_blocks) == 2:  # 两个障碍
-                if 4 <= w_type <= 9:  # 这类是一定要卖给它东西的, 直接标记为不能用
+                if self.MIN_SELL_WORKBENCH <= self.map_data[i][j] <= self.MAX_WORKBENCH:  # 这类是一定要卖给它东西的, 直接标记为不能用
                     self.unreanchble_warkbench.add((i, j))
                     continue
                 # 对于1-3 只有两个障碍是对角的形式才行
                 if tmp_blocks[0][0] == tmp_blocks[1][0] or tmp_blocks[0][1] == tmp_blocks[1][1]:
                     self.unreanchble_warkbench.add((i, j))
                     continue
-            elif 4 <= w_type <= 9:  # 四个角占用两个以上的没法卖
+            if self.MIN_SELL_WORKBENCH <= self.map_data[i][j] <=  self.MAX_WORKBENCH:
                 if (i == 0 or j == 0 or self.map_gray[i - 1][j - 1] == self.BLOCK) and (
                         i == 99 or j == 99 or self.map_gray[i + 1][j + 1] == self.BLOCK):
                     self.unreanchble_warkbench.add((i, j))
@@ -208,7 +202,6 @@ class Workmap:
                         i == 99 or j == 0 or self.map_gray[i + 1][j - 1] == self.BLOCK):
                     self.unreanchble_warkbench.add((i, j))
                     continue
-            # else 其他情况路径不可能规划到那, 暂时不作处理
 
         # 算广路 方便机器人冲冲冲 上下左右都是宽路即可
         for i in range(2, 98):
@@ -222,27 +215,15 @@ class Workmap:
                 else:
                     self.map_gray[i][j] = self.SUPER_BROAD_ROAD
 
-    def robot2workbench(self, bule):
+    def robot2workbench(self):
         '''
         获取每个机器人可以访问的工作台列表, 买的过程由此构建
-        bule: 是否计算蓝队的机器人, 如果置为false则计算红队的机器人
-        return: 每个机器人可以访问的我方工作台列表, 每个机器人可以访问的敌方工作台列表
         '''
-        if bule:
-            robots_loc = self.robots_loc_blue
-            workbenchs_loc = self.workbenchs_loc_blue
-            workbenchs_loc_another = self.workbenchs_loc_red
-        else:
-            robots_loc = self.robots_loc_red
-            workbenchs_loc = self.workbenchs_loc_red
-            workbenchs_loc_another = self.workbenchs_loc_blue
-        res = [[] for _ in robots_loc]  # 我方工作台列表
-        res_another = [[] for _ in robots_loc]  # 地方工作台列表
+        res = [[] for _ in self.robots_loc]
         visited_robot = []  # 如果在遍历过程中找到了其他机器人，说明他两个的地点是可以相互到达的，进而可访问的工作台也是相同的
         visited_workbench = []  # 记录可达的工作台ID
-        visited_workbench_another = []  # 记录可达的敌方工作台ID
         visited_loc = [[False] * 100 for _ in range(100)]  # 记录访问过的节点
-        for robot_loc, robot_ID in robots_loc.items():
+        for robot_loc, robot_ID in self.robots_loc.items():
             if res[robot_ID]:  # 已经有内容了，不必再更新
                 continue
             dq = [robot_loc]
@@ -252,45 +233,33 @@ class Workmap:
                     n_x, n_y = i + x, j + y
                     if n_x > 99 or n_y > 99 or n_x < 0 or n_y < 0 or visited_loc[n_x][n_y]:
                         continue
+                    if self.map_data[n_x][n_y] == self.ROBOT_VALUE:
+                        visited_robot.append(self.robots_loc[(n_x, n_y)])
+                    # 只关心1-9，因为空手去89没有意义
+                    if self.MIN_WORKBENCH <= self.map_data[n_x][n_y] <= self.MAX_WORKBENCH and (n_x, n_y) not in self.unreanchble_warkbench:
+                        visited_workbench.append(
+                            self.workbenchs_loc[(n_x, n_y)])  # 将这个工作台添加到列表
                     visited_loc[n_x][n_y] = True
                     if self.map_gray[n_x][n_y] >= self.ROAD:
                         dq.append((n_x, n_y))
-                    if (n_x, n_y) in robots_loc:  # 访问到其他机器人
-                        visited_robot.append(robots_loc[(n_x, n_y)])
-                    # 访问到自己的工作台, 只关心1-9，因为空手去89没有意义
-                    elif (n_x, n_y) in workbenchs_loc and (n_x, n_y) not in self.unreanchble_warkbench:
-                        visited_workbench.append(
-                            workbenchs_loc[(n_x, n_y)][1])  # 将这个工作台添加到列表
-                    elif (n_x, n_y) in workbenchs_loc_another and (n_x, n_y) not in self.unreanchble_warkbench:
-                        visited_workbench_another.append(
-                            workbenchs_loc_another[(n_x, n_y)][1])  # 将这个工作台添加到敌方列表
-
             tmp = visited_workbench[:]  # 拷贝一下
-            tmp2 = visited_workbench_another[:]
             for idx in visited_robot:
                 res[idx] = tmp  # 这里指向同一个列表，节省内存
-                res_another[idx] = tmp2
             visited_robot.clear()
             visited_workbench.clear()
-            visited_workbench_another.clear()
-        return res, res_another
+        return res
 
-    def workbench2workbench(self, blue):
+    def workbench2workbench(self):
         '''
         获取每个工作台可以访问的收购对应商品的工作台列表, 卖的过程由此构建
-        bule: 是否计算蓝队的机器人, 如果置为false则计算红队的机器人
         '''
-        if blue:
-            workbenchs_loc = self.workbenchs_loc_blue
-        else:
-            workbenchs_loc = self.workbenchs_loc_red
-        res = [[] for _ in workbenchs_loc]
+        res = [[] for _ in self.workbenchs_loc]
         visited_workbench = []  # 记录可达的工作台ID及类型, 在这同一个列表中的工作台说明可以相互访问
         visited_loc = [[False] * 100 for _ in range(100)]  # 记录访问过的节点
-        for workbench_loc, (workbench_type, workbench_ID) in workbenchs_loc.items():
+        for workbench_loc, workbench_ID in self.workbenchs_loc.items():
             if res[workbench_ID]:  # 已经有内容了，不必再更新
                 continue
-            if workbench_type in [8, 9]:  # 8 9没有出售目标
+            if self.map_data[workbench_loc[0]][workbench_loc[1]] in self.ONLY_SELL_WORKBENCH:  # 8 9没有出售目标
                 continue
             dq = [workbench_loc]
             while dq:
@@ -300,42 +269,35 @@ class Workmap:
                     # 因为是卖的过程，必须是宽路
                     if n_x > 99 or n_y > 99 or n_x < 0 or n_y < 0 or visited_loc[n_x][n_y]:
                         continue
-                    if (n_x, n_y) in workbenchs_loc and (n_x, n_y) not in self.unreanchble_warkbench:
+                    if self.MIN_WORKBENCH <= self.map_data[n_x][n_y] <= self.MAX_WORKBENCH and (n_x, n_y) not in self.unreanchble_warkbench:
                         visited_workbench.append(
-                            workbenchs_loc[(n_x, n_y)])  # 将这个工作台添加到列表
+                            (self.workbenchs_loc[(n_x, n_y)], ord(self.map_data[n_x][n_y])-ord(self.MIN_WORKBENCH)+1))  # 将这个工作台添加到列表
                     visited_loc[n_x][n_y] = True
                     if self.map_gray[n_x][n_y] >= self.BROAD_ROAD:
                         dq.append((n_x, n_y))
-            for wb_type, wb_ID in visited_workbench:
+            for wb_ID, wb_type in visited_workbench:
                 # 为每一个在集合中的工作台寻找可以访问的目标
                 if wb_type in [8, 9]:  # 8,9 只收不卖
                     continue
-                for aim_type, aim_ID in visited_workbench:
+                for aim_ID, aim_type in visited_workbench:
                     if wb_type in Workbench.WORKSTAND_IN[aim_type]:
                         res[wb_ID].append(aim_ID)
             visited_workbench.clear()
         return res
 
-    def gen_a_path(self, workbench_ID, workbench_loc, blue, broad_road=False):
+    def gen_a_path(self, workbench_ID, workbench_loc, broad_road=False):
         '''
         生成一个工作台到其他节点的路径，基于迪杰斯特拉优化
         workbench_ID: 工作台ID
         workbench_loc: 当前节点坐标
         broad_road: 是否只能走宽路
-        blue: 是否是蓝方
         '''
-        if blue:
-            sell_map = self.sell_map_blue
-            buy_map = self.buy_map_blue
-        else:
-            sell_map = self.sell_map_red
-            buy_map = self.buy_map_red
         reach = []  # 上一轮到达的节点集合
         if broad_road:
-            target_map = sell_map[workbench_ID]
+            target_map = self.sell_map[workbench_ID]
             low_value = self.BROAD_ROAD
         else:
-            target_map = buy_map[workbench_ID]
+            target_map = self.buy_map[workbench_ID]
             low_value = self.ROAD
         node_x, node_y = workbench_loc
         target_map[node_x][node_y] = workbench_loc
@@ -377,23 +339,23 @@ class Workmap:
         以工作台为中心拓展
         '''
         base_map = [[None for _ in range(100)] for _ in range(100)]
-        for bule_flag in [True, False]:
-            if bule_flag:
-                workbenchs_loc = self.workbenchs_loc_blue
-            else:
-                workbenchs_loc = self.workbenchs_loc_red
-            for loc, (_, idx) in workbenchs_loc.items():
-                if loc in self.unreanchble_warkbench:
-                    continue
-                x, y = loc
-                if bule_flag:
-                    self.buy_map_blue[idx] = copy.deepcopy(base_map)
-                    self.sell_map_blue[idx] = copy.deepcopy(base_map)
-                else:
-                    self.buy_map_red[idx] = copy.deepcopy(base_map)
-                    self.sell_map_red[idx] = copy.deepcopy(base_map)
-                self.gen_a_path(idx, loc, bule_flag, False)
-                self.gen_a_path(idx, loc, bule_flag, True)
+        for loc, idx in self.workbenchs_loc.items():
+            if loc in self.unreanchble_warkbench:
+                continue
+            x, y = loc
+            flag1, flag2 = True, True
+            workbench_type = self.map_data[x][y]
+            if workbench_type in self.ONLY_SELL_WORKBENCH:
+                flag1 = False  # 空手到8、9没有意义
+            # 宽路先都算
+            # elif '1' <= workbench_type <= '3':
+            #     flag2 = False  # 拿着东西到1、2、3没有意义
+            if flag1:
+                self.buy_map[idx] = copy.deepcopy(base_map)
+                self.gen_a_path(idx, loc, False)
+            if flag2:
+                self.sell_map[idx] = copy.deepcopy(base_map)
+                self.gen_a_path(idx, loc, True)
 
     def get_avoid_path(self, wait_flaot_loc, work_path, robots_loc, broad_road=False, safe_dis: float = None):
         '''
@@ -420,8 +382,7 @@ class Workmap:
         path_map = {(node_x, node_y): (node_x, node_y)}  # 记录路径
         for robot_loc in robots_loc:
             robot_x, robot_y = self.loc_float2int(*robot_loc)
-            # + [(0, 2), (0, -2), (-2, 0), (2, 0)]
-            block_turns = self.TURNS + [(0, 0)]
+            block_turns = self.TURNS + [(0,0)] #+ [(0, 2), (0, -2), (-2, 0), (2, 0)]
             for x, y in block_turns:
                 block_x, block_y = robot_x + x, robot_y + y
                 if block_x < 0 or block_x > 99 or block_y < 0 or block_y > 99:
@@ -468,21 +429,37 @@ class Workmap:
                 *path[-i], self.map_gray[x][y] == self.ROAD))
         return float_path
 
-    def get_float_path(self, float_loc, workbench_ID, blue:bool, broad_road=False):
+    def get_float_path(self, float_loc, workbench_ID, broad_road=False, key_point=False):
         '''
         获取浮点型的路径
         float_loc: 当前位置的浮点坐标
         workbench_ID: 工作台ID
         broad_road: 是否只能走宽路  
-        blue: 是否是蓝方
+        key_point: 关键点模式, 若指定为True则只返回路径上需要转弯的关键点
         返回路径(换算好的float点的集合)
         '''
         if broad_road:
-            path = self.get_path(float_loc, workbench_ID, blue, broad_road)
+            path = self.get_path(float_loc, workbench_ID, broad_road)
         else:  # 如果不指定走宽路，则优先走宽路
-            path = self.get_better_path(float_loc, workbench_ID, blue)
+            path = self.get_better_path(float_loc, workbench_ID)
         if not path:
             return path
+        if key_point and len(path) > 2:
+            new_path = [path[0]]
+            # 记录之前两个点的差值
+            tmp_x, tmp_y = path[1][0] - path[0][0], path[1][1] - path[0][1]
+            idx = 2
+            while idx < len(path):
+                next_x, next_y = path[idx][0] - \
+                    path[idx - 1][0], path[idx][1] - path[idx - 1][1]
+                if next_x != tmp_x or next_y != tmp_y:  # 变向了说明在前一个点处拐弯
+                    new_path.append(path[idx - 1])
+                    tmp_x, tmp_y = next_x, next_y
+                idx += 1
+            new_path.append(path[-1])
+            # logging.info(f'Path: {path} new_path{new_path}')
+            path = new_path
+
         for i in range(len(path) - 1):
             x, y = path[i]
             path[i] = self.loc_int2float(
@@ -490,40 +467,32 @@ class Workmap:
         path[-1] = self.loc_int2float_normal(*path[-1])
         return path
 
-    def get_better_path(self, float_loc, workbench_ID, blue:bool, threshold=15):
+    def get_better_path(self, float_loc, workbench_ID, threshold=15):
         '''
         同时计算宽路和窄路，如果宽路比窄路多走不了阈值, 就选宽路
         threshold: 阈值，如果宽路窄路都有，宽路比窄路多走不了阈值时走宽路
-        blue: 是否是蓝方
         '''
         # 窄路
-        path1 = self.get_path(float_loc, workbench_ID, blue, False)
+        path1 = self.get_path(float_loc, workbench_ID)
         # 宽路
-        path2 = self.get_path(float_loc, workbench_ID, blue, True)
+        path2 = self.get_path(float_loc, workbench_ID, True)
         # 不存在宽路，或者宽路比窄路多走超过阈值则返回窄路
         if not path2 or len(path2) - len(path1) > threshold:
             return path1
         return path2
 
-    def get_path(self, float_loc, workbench_ID, blue:bool, broad_road=False):
+    def get_path(self, float_loc, workbench_ID, broad_road=False):
         '''
         获取某点到某工作台的路径
         float_loc: 当前位置的浮点坐标
         workbench_ID: 工作台ID
-        broad_road: 是否只能走宽路
-        blue: 是否是蓝方
+        broad_road: 是否只能走宽路   
         返回路径(int点的集合)
         '''
-        if blue:
-            buy_map = self.buy_map_blue
-            sell_map = self.sell_map_blue
-        else:
-            buy_map = self.buy_map_blue
-            sell_map = self.sell_map_red
         if broad_road:  # 决定要查哪个地图
-            target_map = sell_map[workbench_ID]
+            target_map = self.sell_map[workbench_ID]
         else:
-            target_map = buy_map[workbench_ID]
+            target_map = self.buy_map[workbench_ID]
         node_x, node_y = self.loc_float2int(*float_loc)
         if not target_map[node_x][node_y]:
             for x, y in self.TURNS:
@@ -543,6 +512,15 @@ class Workmap:
                 break
             x, y = target_map[x][y]
         return path
+
+    def get_roadID(self, loc: Tuple[int]) -> int:
+        '''
+        判断某坐标是否属于狭路，如果是返回狭路坐标否则返回-1
+        '''
+        for roadID, road in enumerate(self.roads):
+            if loc in road:
+                return roadID
+        return -1
 
     def draw_map(self):
         pass
@@ -566,3 +544,12 @@ class Workmap:
             path_map[x][y] = self.PATH
         self.plt.imshow(path_map)
         self.plt.show()
+
+    def read_map_directly(self, map_path):
+        with open(map_path) as map:
+            lines = map.readlines()
+            for i, line in enumerate(lines):
+                self.map_data.append(line)
+                for j in range(100):
+                    if line[j] == '#':  # 障碍
+                        self.map_gray[i][j] = self.BLOCK
