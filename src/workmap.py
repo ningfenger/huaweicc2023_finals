@@ -538,7 +538,7 @@ class Workmap:
             buy_map = self.buy_map_blue
             sell_map = self.sell_map_blue
         else:
-            buy_map = self.buy_map_blue
+            buy_map = self.buy_map_red
             sell_map = self.sell_map_red
         if broad_road:  # 决定要查哪个地图
             target_map = sell_map[workbench_ID]
