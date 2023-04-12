@@ -87,6 +87,24 @@ class Workmap:
         i = round(100 - (y + 0.25) * 2)
         j = round((x - 0.25) * 2)
         return i, j
+    
+    def get_robots(self, blue:bool):
+        '''
+        根据颜色获取机器人字典
+        '''
+        if blue:
+            return self.robots_loc_blue
+        else:
+            return self.robots_loc_red
+    
+    def get_workbenchs(self, blue:bool):
+        '''
+        根据颜色获取工作台字典
+        '''
+        if blue:
+            return self.workbenchs_loc_blue
+        else:
+            return self.workbenchs_loc_red
 
     def dis_loc2path(self, loc, path):
         '''
@@ -222,13 +240,13 @@ class Workmap:
                 else:
                     self.map_gray[i][j] = self.SUPER_BROAD_ROAD
 
-    def robot2workbench(self, bule):
+    def robot2workbench(self, blue):
         '''
         获取每个机器人可以访问的工作台列表, 买的过程由此构建
-        bule: 是否计算蓝队的机器人, 如果置为false则计算红队的机器人
+        blue: 是否计算蓝队的机器人, 如果置为false则计算红队的机器人
         return: 每个机器人可以访问的我方工作台列表, 每个机器人可以访问的敌方工作台列表
         '''
-        if bule:
+        if blue:
             robots_loc = self.robots_loc_blue
             workbenchs_loc = self.workbenchs_loc_blue
             workbenchs_loc_another = self.workbenchs_loc_red
@@ -257,10 +275,12 @@ class Workmap:
                         dq.append((n_x, n_y))
                     if (n_x, n_y) in robots_loc:  # 访问到其他机器人
                         visited_robot.append(robots_loc[(n_x, n_y)])
-                    # 访问到自己的工作台, 只关心1-9，因为空手去89没有意义
+                    # 访问到自己的工作台, 只关心1-7，因为空手去89没有意义
                     elif (n_x, n_y) in workbenchs_loc and (n_x, n_y) not in self.unreanchble_warkbench:
-                        visited_workbench.append(
-                            workbenchs_loc[(n_x, n_y)][1])  # 将这个工作台添加到列表
+                        w_type, idx = workbenchs_loc[(n_x, n_y)]
+                        if 1<=w_type<=7:
+                            visited_workbench.append(idx)  # 将这个工作台添加到列表
+                    # 敌方的全部要管
                     elif (n_x, n_y) in workbenchs_loc_another and (n_x, n_y) not in self.unreanchble_warkbench:
                         visited_workbench_another.append(
                             workbenchs_loc_another[(n_x, n_y)][1])  # 将这个工作台添加到敌方列表
@@ -278,7 +298,7 @@ class Workmap:
     def workbench2workbench(self, blue):
         '''
         获取每个工作台可以访问的收购对应商品的工作台列表, 卖的过程由此构建
-        bule: 是否计算蓝队的机器人, 如果置为false则计算红队的机器人
+        blue: 是否计算蓝队的机器人, 如果置为false则计算红队的机器人
         '''
         if blue:
             workbenchs_loc = self.workbenchs_loc_blue
@@ -316,7 +336,7 @@ class Workmap:
             visited_workbench.clear()
         return res
 
-    def gen_a_path(self, workbench_ID, workbench_loc, blue, broad_road=False):
+    def gen_a_path(self, workbench_ID, workbench_loc, blue: bool, broad_road=False):
         '''
         生成一个工作台到其他节点的路径，基于迪杰斯特拉优化
         workbench_ID: 工作台ID
@@ -377,8 +397,8 @@ class Workmap:
         以工作台为中心拓展
         '''
         base_map = [[None for _ in range(100)] for _ in range(100)]
-        for bule_flag in [True, False]:
-            if bule_flag:
+        for blue_flag in [True, False]:
+            if blue_flag:
                 workbenchs_loc = self.workbenchs_loc_blue
             else:
                 workbenchs_loc = self.workbenchs_loc_red
@@ -386,14 +406,14 @@ class Workmap:
                 if loc in self.unreanchble_warkbench:
                     continue
                 x, y = loc
-                if bule_flag:
+                if blue_flag:
                     self.buy_map_blue[idx] = copy.deepcopy(base_map)
                     self.sell_map_blue[idx] = copy.deepcopy(base_map)
                 else:
                     self.buy_map_red[idx] = copy.deepcopy(base_map)
                     self.sell_map_red[idx] = copy.deepcopy(base_map)
-                self.gen_a_path(idx, loc, bule_flag, False)
-                self.gen_a_path(idx, loc, bule_flag, True)
+                self.gen_a_path(idx, loc, blue_flag, False)
+                self.gen_a_path(idx, loc, blue_flag, True)
 
     def get_avoid_path(self, wait_flaot_loc, work_path, robots_loc, broad_road=False, safe_dis: float = None):
         '''

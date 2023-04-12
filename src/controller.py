@@ -24,7 +24,7 @@ class Controller:
     MAX_WAIT_MUL = 1.5
     MAX_WAIT = MAX_WAIT_MUL * 50  # 最大等待时间
     SELL_WEIGHT = 1.85  # 优先卖给格子被部分占用的
-    SELL_DEBUFF = 0.55 # 非 7 卖给89的惩罚
+    SELL_DEBUFF = 0.55  # 非 7 卖给89的惩罚
     CONSERVATIVE = 1 + 2 / MOVE_SPEED  # 保守程度 最后时刻要不要操作
     STARVE_WEIGHT = SELL_WEIGHT
 
@@ -45,16 +45,18 @@ class Controller:
 
     FLAG_HUQ = True
 
-    def __init__(self, robots: List[Robot], workbenchs: List[Workbench], m_map: Workmap):
+    def __init__(self, robots: List[Robot], workbenchs: List[Workbench], m_map: Workmap, blue_flag: bool):
         self.robots = robots
         self.workbenchs = workbenchs
         self.m_map = m_map
         self.m_map_arr = np.array(m_map.map_gray)
+        self.blue_flag = blue_flag
         self.starve = {4: 0, 5: 0, 6: 0}  # 当7急需4 5 6 中的一个时, +1 鼓励生产
         # 预防跳帧使用, 接口先留着
         self.buy_list = []  # 执行过出售操作的机器人列表
         self.sell_list = []  # 执行过购买操作的机器人列表
-        self.tmp_avoid = {} # 暂存避让计算结果
+        self.tmp_avoid = {}  # 暂存避让计算结果
+
     def set_control_parameters(self, move_speed: float, max_wait: int, sell_weight: float, sell_debuff: float):
         '''
         设置参数， 建议取值范围:
@@ -85,7 +87,7 @@ class Controller:
         """
         for robot in self.robots:
             frame_diff_to_detect = self.FRAME_DIFF_TO_DETECT_DEADLOCK + \
-                                   random.randint(5, 30)
+                random.randint(5, 30)
             distance = np.sqrt(
                 np.sum(np.square(robot.loc_np - robot.pre_position)))
             toward_diff = abs(robot.toward - robot.pre_toward)
@@ -211,7 +213,7 @@ class Controller:
                 # 3 4 象限
                 y_set_ygrid = np.arange(raw, max(raw - 3, 0), -1) * 0.5
             x_set_ygrid = 1 / np.tan(theta) * \
-                          (y_set_ygrid - point[1]) + point[0]
+                (y_set_ygrid - point[1]) + point[0]
             x_set_all = np.concatenate((x_set_xgrid, x_set_ygrid))
             y_set_all = np.concatenate((y_set_xgrid, y_set_ygrid))
 
@@ -237,7 +239,7 @@ class Controller:
 
         mask = np.zeros_like(x_set_mid, dtype=bool)
         mask[(x_set_mid >= 0) & (x_set_mid <= 50) & (
-                y_set_mid >= 0) & (y_set_mid <= 50)] = True
+            y_set_mid >= 0) & (y_set_mid <= 50)] = True
         x_set_mid = x_set_mid[mask]
         y_set_mid = y_set_mid[mask]
         idx_ob = -1
@@ -314,7 +316,7 @@ class Controller:
                 y_set_ygrid = np.arange(
                     raw, max(raw - max_num - 1, -1), -1) * 0.5
             x_set_ygrid = 1 / np.tan(theta) * \
-                          (y_set_ygrid - loc0[1]) + loc0[0]
+                (y_set_ygrid - loc0[1]) + loc0[0]
             x_set_all = np.concatenate((x_set_xgrid, x_set_ygrid))
             y_set_all = np.concatenate((y_set_xgrid, y_set_ygrid))
 
@@ -352,7 +354,7 @@ class Controller:
                 y = y_set_mid[i_point]
                 raw, col = tools.cor2rc(x, y)
                 if raw <= -1 or raw >= 100 or col <= -1 or col >= 100 or self.m_map_arr[
-                    raw, col] < Workmap.SUPER_BROAD_ROAD:
+                        raw, col] < Workmap.SUPER_BROAD_ROAD:
                     return False
                 # if raw <= -1 or raw >= 100 or col <= -1 or col >= 100 or self.m_map_arr[raw, col] == 0 or self.m_map_arr[raw, col] == 2:
                 #     # 障碍物
@@ -364,7 +366,7 @@ class Controller:
                 y = y_set_mid[i_point]
                 raw, col = tools.cor2rc(x, y)
                 if raw <= -1 or raw >= 100 or col <= -1 or col >= 100 or self.m_map_arr[
-                    raw, col] < Workmap.BROAD_ROAD or (raw, col) in self.m_map.broad_shifting:
+                        raw, col] < Workmap.BROAD_ROAD or (raw, col) in self.m_map.broad_shifting:
                     return False
                 # if raw <= -1 or raw >= 100 or col <= -1 or col >= 100 or self.m_map_arr[raw, col] == 0:
                 #     # 障碍物
@@ -435,7 +437,7 @@ class Controller:
                 y_set_ygrid = np.arange(
                     raw, max(raw - max_num - 1, -1), -1) * 0.5
             x_set_ygrid = 1 / np.tan(theta) * \
-                          (y_set_ygrid - loc0[1]) + loc0[0]
+                (y_set_ygrid - loc0[1]) + loc0[0]
             x_set_all = np.concatenate((x_set_xgrid, x_set_ygrid))
             y_set_all = np.concatenate((y_set_xgrid, y_set_ygrid))
 
@@ -577,10 +579,12 @@ class Controller:
 
                 # 本机器人速度朝向
                 speed_vec_this = np.array(robot_this.speed)
-                theta_speed_this = np.arctan2(speed_vec_this[1], speed_vec_this[0])
+                theta_speed_this = np.arctan2(
+                    speed_vec_this[1], speed_vec_this[0])
 
                 # 本机器人 对方相对于自身朝向
-                theta_robot_this = np.arctan2(vec_this2other[1], vec_this2other[0])
+                theta_robot_this = np.arctan2(
+                    vec_this2other[1], vec_this2other[0])
 
                 #############################
                 # 其他机器人头朝向
@@ -588,10 +592,12 @@ class Controller:
 
                 # 其他机器人速度朝向
                 speed_vec_other = np.array(robot_other.speed)
-                theta_speed_other = np.arctan2(speed_vec_other[1], speed_vec_other[0])
+                theta_speed_other = np.arctan2(
+                    speed_vec_other[1], speed_vec_other[0])
 
                 # 其他机器人 自身相对于对方朝向
-                theta_robot_other = np.arctan2(vec_other2this[1], vec_other2this[0])
+                theta_robot_other = np.arctan2(
+                    vec_other2this[1], vec_other2this[0])
 
                 # 撞向对方的可能
                 if max(abs(theta_toward_this - theta_robot_this), abs(theta_speed_this - theta_robot_this), abs(theta_toward_other - theta_robot_other), abs(theta_speed_other - theta_robot_other)) < thr_theta:
@@ -615,7 +621,7 @@ class Controller:
                         theta = tools.np_theta(loc_obt, loc_robot)
 
                         offset = offset + 0.5 * \
-                                 np.array([np.cos(theta), np.cos(theta)])
+                            np.array([np.cos(theta), np.cos(theta)])
         # sys.stderr.write(f"势场修正:{offset[0]},{offset[1]}\n")
         return offset
 
@@ -625,7 +631,7 @@ class Controller:
             new_row = row + row_offset
             new_col = col + col_offset
             if new_col < 0 or new_col > 99 or new_row < 0 or new_row > 99 or self.m_map.map_gray[new_row][
-                new_col] == Workmap.BLOCK:
+                    new_col] == Workmap.BLOCK:
                 return False
         return True
 
@@ -636,7 +642,7 @@ class Controller:
             new_row = row + row_offset
             new_col = col + col_offset
             if new_col < 0 or new_col > 99 or new_row < 0 or new_col > 99 or self.m_map.map_gray[new_row][
-                new_col] == Workmap.BLOCK:
+                    new_col] == Workmap.BLOCK:
                 count += 1
         return count
 
@@ -669,7 +675,7 @@ class Controller:
             else:
                 self.re_path(robot)
                 # 足够接近时 重新选择
-                if flag_obt_near :
+                if flag_obt_near:
                     target_loc, target_idx = self.select_target(idx_robot)
                 else:
                     target_idx = robot.find_temp_tar_idx()
@@ -730,11 +736,11 @@ class Controller:
                 if robot_target == self.robots[idx_huq].target:
                     # 我买对方卖
                     if robot.status in [Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS] and status_huq in [
-                        Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS]:
+                            Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS]:
                         priority_idx = idx_robot
                     # 我卖对方买
                     elif robot.status in [Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS] and status_huq in [
-                        Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS]:
+                            Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS]:
                         priority_idx = idx_huq
                     # 同买同卖
                     else:
@@ -830,7 +836,7 @@ class Controller:
             # if frame_wait_buy > self.MAX_WAIT: 由于移动时间更长了，所以直接生产等待时间比较不合理
             #     continue
             frame_move_to_buy = len(self.m_map.get_path(
-                robot.loc, idx_workbench_to_buy)) * self.MOVE_SPEED
+                robot.loc, idx_workbench_to_buy, self.blue_flag)) * self.MOVE_SPEED
             if frame_wait_buy - frame_move_to_buy > self.MAX_WAIT:  # 等待时间超出移动时间的部分才有效
                 continue
             # 需要这个产品的工作台
@@ -851,7 +857,7 @@ class Controller:
                     else:
                         frame_wait_sell = workbench_sell.product_time
                 # frame_move_to_buy, frame_move_to_sell= self.get_time_rww(idx_robot, idx_workstand, idx_worksand_to_sell)
-                frame_move_to_sell = len(self.m_map.get_path(workbench_buy.loc, idx_workbench_to_sell,
+                frame_move_to_sell = len(self.m_map.get_path(workbench_buy.loc, idx_workbench_to_sell, self.blue_flag,
                                                              True)) * self.MOVE_SPEED
                 frame_buy = max(frame_move_to_buy, frame_wait_buy)  # 购买时间
                 frame_sell = max(frame_move_to_sell,
@@ -880,7 +886,7 @@ class Controller:
             idx_workbench_to_sell = robot.get_sell()
             robot.target = idx_workbench_to_buy
             robot.set_path(self.m_map.get_float_path(
-                robot.loc, idx_workbench_to_buy))
+                robot.loc, idx_workbench_to_buy, self.blue_flag))
             # 预定工作台
             self.workbenchs[idx_workbench_to_buy].pro_buy()
             self.workbenchs[idx_workbench_to_sell].pro_sell(
@@ -895,11 +901,11 @@ class Controller:
         if robot.status in [Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS]:
             # 重新规划路径
             robot.set_path(self.m_map.get_float_path(
-                robot.loc, robot.get_buy()))
+                robot.loc, robot.get_buy(), self.blue_flag))
             robot.status = Robot.MOVE_TO_BUY_STATUS
         elif robot.status in [Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS]:
             robot.set_path(self.m_map.get_float_path(
-                robot.loc, robot.get_sell(), True))
+                robot.loc, robot.get_sell(), self.blue_flag, True))
             robot.status = Robot.MOVE_TO_SELL_STATUS
 
     def process_deadlock(self, robot1_idx, robot2_idx, priority_idx=-1, safe_dis: float = None):
@@ -912,7 +918,7 @@ class Controller:
         '''
         r1, r2 = min(robot1_idx, robot2_idx), max(robot1_idx, robot2_idx)
         if (r1, r2) in self.tmp_avoid:
-            return self.tmp_avoid[(r1,r2)]
+            return self.tmp_avoid[(r1, r2)]
         robot1, robot2 = self.robots[robot1_idx], self.robots[robot2_idx]
         other_locs = []  # 记录另外两个机器人的坐标
         for idx, robot in enumerate(self.robots):
@@ -955,7 +961,7 @@ class Controller:
                     avoid_robot = robot1_idx
                     avoid_path = avoid_path1
         # sys.stderr.write(f"avoid_robot: {avoid_robot} avoid_path{avoid_path}\n")
-        self.tmp_avoid[(r1,r2)] = (avoid_robot, avoid_path)
+        self.tmp_avoid[(r1, r2)] = (avoid_robot, avoid_path)
         return avoid_robot, avoid_path
 
     def process_long_deadlock(self, frame_id):
@@ -1034,12 +1040,12 @@ class Controller:
                         robot.target = idx_workbench_to_sell  # 更新目标到卖出地点
                         robot.status = Robot.MOVE_TO_SELL_STATUS  # 切换为 【出售途中】
                         robot.set_path(self.m_map.get_float_path(
-                            robot.loc, idx_workbench_to_sell, True))
+                            robot.loc, idx_workbench_to_sell, self.blue_flag, True))
                         continue
                     else:
                         robot.status = Robot.MOVE_TO_BUY_STATUS
                         robot.set_path(self.m_map.get_float_path(
-                            robot.loc, robot.get_buy()))
+                            robot.loc, robot.get_buy(), self.blue_flag))
                         continue
             elif robot_status == Robot.MOVE_TO_SELL_STATUS:
                 # 【出售途中】
@@ -1079,7 +1085,7 @@ class Controller:
                                 self.starve[robot.item_type] -= 1
                             else:
                                 self.starve[Workbench.WORKSTAND_STARVE[workbench_sell.material + (
-                                        1 << robot.item_type)]] += 1
+                                    1 << robot.item_type)]] += 1
                             # sys.stderr.write(f"material: {self.starve}\n")
                         # 取消预定
                         sell_out_list.append(idx_robot)
@@ -1089,7 +1095,7 @@ class Controller:
                     else:
                         robot.status = Robot.MOVE_TO_SELL_STATUS  # 购买失败说明位置不对，切换为 【出售途中】
                         robot.set_path(self.m_map.get_float_path(
-                            robot.loc, idx_workbench_to_sell, True))
+                            robot.loc, idx_workbench_to_sell, self.blue_flag, True))
                         continue
             elif robot_status == Robot.AVOID_CLASH:
                 if robot.frame_backword > 0:
@@ -1097,7 +1103,8 @@ class Controller:
                     robot.frame_backword -= 1
                 else:
                     self.set_robot_state_undeadlock(idx_robot, frame_id)
-                    avoid_idx, avoid_path = self.process_deadlock(idx_robot, robot.anoter_robot)
+                    avoid_idx, avoid_path = self.process_deadlock(
+                        idx_robot, robot.anoter_robot)
                     robot.status = robot.last_status
                     if avoid_idx == idx_robot:
                         robot.set_path(avoid_path)

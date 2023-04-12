@@ -32,6 +32,7 @@ class Robot:
         self.target = -1  # 当前机器人的目标控制台 -1代表无目标
         self.__plan = (-1, -1)  # 设定买和卖的目标工作台
         self.target_workbench_list = []  # 可到达的工作台列表
+        self.anoter_workbench_list = []  # 可到达的敌方工作台列表
         self.path = []
 
         # 关于检测机器人对眼死锁的成员变量
@@ -45,17 +46,18 @@ class Robot:
         self.deadlock_with = -1
         # 避让等待
         self.frame_wait = 0
-        self.frame_backword = 0 # 后退帧数
+        self.frame_backword = 0  # 后退帧数
         # 预估剩余时间
         self.frame_reman_buy = 0  # 预计多久能买任务
         self.frame_reman_sell = 0  # 预计多久能卖任务
         # 路径追踪的临时点
         self.temp_target = None
-        self.last_target = -1 # 记录上一个目标，解除死锁用
-        self.anoter_robot = -1 # 记录和它冲突的机器人
+        self.last_target = -1  # 记录上一个目标，解除死锁用
+        self.anoter_robot = -1  # 记录和它冲突的机器人
         self.temp_idx = None
         self.buy_use = False
         self.sell_use = False
+
     def get_frame_reman(self):
         '''
         预计还需要多久可以完成当前任务, 与状态有关
@@ -145,7 +147,7 @@ class Robot:
         row1 = min(nearest_row + 1, len(self.path) - 1)
         return row1
 
-    def find_temp_tar_idx_path_input(self, path):  ####################
+    def find_temp_tar_idx_path_input(self, path):
         robot_pos = np.array(list(self.loc))
         dists = np.sqrt(np.sum((path - robot_pos) ** 2, axis=1))
         nearest_row = np.argmin(dists)

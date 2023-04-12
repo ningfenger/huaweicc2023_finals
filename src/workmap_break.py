@@ -235,7 +235,7 @@ class Workmap:
                         continue
                     if self.map_data[n_x][n_y] == self.ROBOT_VALUE:
                         visited_robot.append(self.robots_loc[(n_x, n_y)])
-                    # 只关心1-9，因为空手去89没有意义
+                    # 只关心1-7，因为空手去89没有意义
                     if self.MIN_WORKBENCH <= self.map_data[n_x][n_y] <= self.MAX_WORKBENCH and (n_x, n_y) not in self.unreanchble_warkbench:
                         visited_workbench.append(
                             self.workbenchs_loc[(n_x, n_y)])  # 将这个工作台添加到列表

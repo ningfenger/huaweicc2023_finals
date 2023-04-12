@@ -25,36 +25,32 @@ if __name__ == '__main__':
     workmap = Workmap()
     robots: List[Robot] = []  # 机器人列表
     workbenchs: List[Workbench] = []  # 工作台列表
+    blue_flag = True
     if input() == 'RED':
-        workmap.MIN_WORKBENCH = 'a'
-        workmap.MAX_WORKBENCH = 'i'
-        workmap.ROBOT_VALUE = 'B'
-        workmap.MIN_SELL_WORKBENCH = 'd'
-        workmap.ONLY_SELL_WORKBENCH = ['h', 'i']
+        blue_flag = False
     # 读入初始化地图
-    for t, loc in workmap.read_map():
-        if t == 'A':
-            robots.append(Robot(len(robots), loc))
-        else:
-            workbenchs.append(Workbench(len(workbenchs), t, loc))
+    workmap.read_map()
+    robots = [None]*4
+    for (i,j), idx in workmap.get_robots(blue_flag).items():
+        loc = workmap.loc_int2float_normal(i,j)
+        robots[idx] = Robot(idx, loc)
+    workbenchs = [None]*len(workmap.get_workbenchs(blue_flag))
+    for (i,j), (wb_type, idx) in workmap.get_workbenchs(blue_flag).items():
+        loc = workmap.loc_int2float_normal(i,j)
+        workbenchs[idx] = Workbench(idx, wb_type, loc)
     workmap.init_roads()
-    for idx, r2w in enumerate(workmap.robot2workbench()):
+    r2ws, r2ws_another = workmap.robot2workbench(blue_flag)
+    # 可达的我方工作台
+    for idx, r2w in enumerate(r2ws):
         robots[idx].target_workbench_list = r2w
-    for idx, w2w in enumerate(workmap.workbench2workbench()):
+    # 可达的敌方工作台
+    for idx, r2w_another in enumerate(r2ws_another):
+        robots[idx].anoter_workbench_list = r2w_another
+    for idx, w2w in enumerate(workmap.workbench2workbench(blue_flag)):
         workbenchs[idx].target_workbench_list = w2w
     # 计算一下路径
     workmap.gen_paths()
-    controller = Controller(robots, workbenchs, workmap)
-    # 针对性调参
-    # if workmap.map_data[3][13] == '7' and workmap.map_data[13][3] == '3' and workmap.map_data[23][3] == '7':
-    #     controller.set_control_parameters(4.155, 2.62,  1.0, 0.63)
-    # elif workmap.map_data[2][2] == '8' and workmap.map_data[62][2] == '4' and workmap.map_data[78][2] == '5':
-    #     controller.set_control_parameters(3.34, 2.94, 1.97, 0.57)
-    #     controller.FLAG_HUQ = False
-    # elif workmap.map_data[53][56] == '4' and workmap.map_data[58][53] == '7' and workmap.map_data[89][4] == '9':
-    #     controller.set_control_parameters(4.95, 1.2, 1.35, 0.45)
-    # elif workmap.map_data[2][3] == '6' and workmap.map_data[22][4] == '2' and workmap.map_data[90][-4] == '5':
-    #     controller.set_control_parameters(4.35, 1.8, 1.05, 0.45)
+    controller = Controller(robots, workbenchs, workmap, blue_flag)
     finish()
 
     while True:
