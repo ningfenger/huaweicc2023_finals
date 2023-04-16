@@ -8,7 +8,7 @@
 import pickle
 import math
 import numpy as np
-
+import tools
 import robot
 import workmap
 from controller import Controller
@@ -34,21 +34,32 @@ def load_controller():
         data = pickle.load(file)
     return data
 
-def show(robot:robot.Robot, map:workmap.Workmap, controller:Controller):
+
+def detect_rival(robot):
+    radar_x = robot.radar_info_x
+    radar_y = robot.radar_info_y
+    mask = tools.is_multiple_of_half(radar_y) & tools.is_multiple_of_half(radar_x)
+    return mask
+
+def show(idx_robot, map:workmap.Workmap, controller:Controller):
+    robot = controller.robots[idx_robot]
     fig = plt.figure(figsize=(20, 16))
     plt.imshow(map.map_gray[::-1], origin='lower', extent=[0, 50, 0, 50])
     plt.plot(robot.path[:, 0], robot.path[:, 1])
     plt.plot(robot.loc[0], robot.loc[1], 'o')
     theta_radar = np.arange(0, 2 * math.pi, math.pi / 180) + robot.toward
-    radar_x = robot.radar_info * np.cos(theta_radar) + robot.loc[0]
-    radar_y = robot.radar_info * np.sin(theta_radar) + robot.loc[1]
+    radar_x = robot.radar_info_dis * np.cos(theta_radar) + robot.loc[0]
+    radar_y = robot.radar_info_dis * np.sin(theta_radar) + robot.loc[1]
 
+    mask = detect_rival(robot)
+    loc_rival, r_rival = controller.detect_rival(robot, robot.path[-1], 10)
     plt.plot(radar_x, radar_y)
-
+    plt.plot(radar_x[mask], radar_y[mask], 'r.')
     plt.plot(robot.temp_target[0], robot.temp_target[1], 'b*')
+    plt.plot(loc_rival[0], loc_rival[1], 'r*', markersize=15)
 
     controller.re_path(robot)
-    target_select = controller.select_target(0)[0]
+    target_select = controller.select_target(idx_robot)[0]
 
     plt.plot(target_select[0], target_select[1], 'g*')
     plt.show()
@@ -57,11 +68,11 @@ def show(robot:robot.Robot, map:workmap.Workmap, controller:Controller):
 
 
 if __name__ == '__main__':
+    idx_robot = 0
     import matplotlib.pyplot as plt
     map = workmap.Workmap(debug=True)
-    map.read_map_directly('F:/huaweicc/maps/2.txt')
+    map.read_map_directly('F:/huaweicc/maps/3.txt')
     map.draw_map()
     controller = load_controller()
-    robot = controller.robots[0]
-    show(robot, map, controller)
+    show(idx_robot, map, controller)
     pass

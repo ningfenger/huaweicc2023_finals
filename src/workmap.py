@@ -599,3 +599,12 @@ class Workmap:
             path_map[x][y] = self.PATH
         self.plt.imshow(path_map)
         self.plt.show()
+
+    def read_map_directly(self, map_path):
+        with open(map_path) as map:
+            lines = map.readlines()
+            for i, line in enumerate(lines):
+                self.map_data.append(line)
+                for j in range(100):
+                    if line[j] == '#':  # 障碍
+                        self.map_gray[i][j] = self.BLOCK

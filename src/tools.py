@@ -113,6 +113,67 @@ def line_ray_intersection(target1, target2, loc, theta):
         target_loc = target1
     return target_loc
 
+def is_multiple_of_half(numbers):
+    # new
+    eps = 1e-2
+    mask = np.absolute(numbers - np.round(numbers / 0.5) * 0.5) > eps
+    return mask
+
+def calculate_circle(x_circle, y_circle):
+    # new
+    # 计算AB和AC的中点
+    M1 = np.array([(x_circle[0] + x_circle[1])/2, (y_circle[0] + y_circle[1])/2])
+    M2 = np.array([(x_circle[0] + x_circle[2])/2, (y_circle[0] + y_circle[2])/2])
+
+    # 计算AB和AC的斜率
+    if x_circle[1] != x_circle[0]:
+        k1 = (y_circle[1] - y_circle[0]) / (x_circle[1] - x_circle[0])
+    else:
+        k1 = None
+
+    if x_circle[2] != x_circle[0]:
+        k2 = (y_circle[2] - y_circle[0]) / (x_circle[2] - x_circle[0])
+    else:
+        k2 = None
+
+    # 计算相应垂线的斜率
+    if k1 is None:
+        k3 = 0
+    else:
+        k3 = -1 / k1
+
+    if k2 is None:
+        k4 = 0
+    else:
+        k4 = -1 / k2
+
+    # 计算相应垂线的截距
+    if k1 is None:
+        b1 = M1[0]
+    else:
+        b1 = M1[1] - k3 * M1[0]
+
+    if k2 is None:
+        b2 = M2[0]
+    else:
+        b2 = M2[1] - k4 * M2[0]
+
+    # 求解交点
+    if k1 is None:
+        x0 = M1[0]
+        y0 = k4 * x0 + b2
+    elif k2 is None:
+        x0 = M2[0]
+        y0 = k3 * x0 + b1
+    else:
+        x0 = (b2 - b1) / (k3 - k4)
+        y0 = k3 * x0 + b1
+
+    # 计算半径
+    r = ((x_circle[0] - x0) ** 2 + (y_circle[0] - y0) ** 2) ** 0.5
+
+    # 返回圆心坐标和半径
+    return x0, y0, r
 
 def line_ray_intersection2(target1, target2, targetb1, targetb2):
     m_len = 1.5

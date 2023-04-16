@@ -34,7 +34,6 @@ class Robot:
         self.__plan = (-1, -1)  # 设定买和卖的目标工作台
         self.target_workbench_list = []  # 可到达的工作台列表
         self.anoter_workbench_list = []  # 可到达的敌方工作台列表
-        self.radar_info = None
         self.path = []
         self.block_model = False # 崽种模式
         self.free_frames = 0 # 空闲帧数
@@ -61,6 +60,12 @@ class Robot:
         self.temp_idx = None
         self.buy_use = False
         self.sell_use = False
+
+
+        self.radar_info_dis = None
+        self.radar_info_theta = None
+        self.radar_info_x = None
+        self.radar_info_y = None
 
     def get_frame_reman(self):
         '''
@@ -221,5 +226,11 @@ class Robot:
         '''
         s = s.split()
         float_list = [float(str_item) for str_item in s]
-        self.radar_info = np.array(float_list)
+        self.radar_info_theta = np.arange(0, 2*math.pi, math.pi / 180) + self.toward
+        self.radar_info_dis = np.array(float_list)
+        self.radar_info_x = self.radar_info_dis * np.cos(self.radar_info_theta) + self.loc[0]
+        self.radar_info_y = self.radar_info_dis * np.sin(self.radar_info_theta) + self.loc[1]
         a = 1000000
+
+
+
