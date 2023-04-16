@@ -62,7 +62,7 @@ def will_collide2(x1, y1, vx1, vy1, x2, y2, vx2, vy2, t_max, r_colli = 1.09):
     c = (x1 - x2)**2 + (y1 - y2)**2
     d_0 = np.sqrt(c)
     d_max = np.sqrt(a * t_max **2 + b * t_max + c)
-    t_small = - 2 * a / b
+    t_small = - b / (2 * a)
     d_small = np.sqrt(a * t_small **2 + b * t_small + c)
     if t_small > 0 and t_small < t_max:
         # 极值点在中间

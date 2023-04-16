@@ -32,6 +32,7 @@ class Robot:
         self.target = -1  # 当前机器人的目标控制台 -1代表无目标
         self.__plan = (-1, -1)  # 设定买和卖的目标工作台
         self.target_workbench_list = []  # 可到达的工作台列表
+        self.radar_info = None
         self.path = []
 
         # 关于检测机器人对眼死锁的成员变量
@@ -209,3 +210,12 @@ class Robot:
         self.speed = (speed_x, speed_y)
         self.loc = (x, y)
         self.loc_np = np.array(list(self.loc))
+
+    def update_radar(self, s: str):
+        '''
+        根据判题器的输入更新机器人的雷达数据, 记得更新status
+        '''
+        s = s.split()
+        float_list = [float(str_item) for str_item in s]
+        self.radar_info = np.array(float_list)
+        a = 1000000
