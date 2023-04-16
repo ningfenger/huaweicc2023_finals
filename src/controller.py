@@ -47,6 +47,8 @@ class Controller:
     # 最长空闲帧数, 一直空闲切换为捣乱模式
     MAX_FREE = 10*50
 
+    # 最长买卖路途， 如果太长直接崽人
+    MAX_BUY_ZAI = 30*6*2
     FLAG_HUQ = True
 
     def __init__(self, robots: List[Robot], workbenchs: List[Workbench], m_map: Workmap, blue_flag: bool):
@@ -127,7 +129,7 @@ class Controller:
         # 先尝试买一个东西再去崽人
         min_path_length = None  # 记录最短路线
         for workbench_buy in robot.target_workbench_list:
-            if self.workbenchs[workbench_buy].typeID not in [1,2,3]:
+            if self.workbenchs[workbench_buy].typeID not in [1, 2, 3]:
                 continue
             block_path = self.m_map.get_path(
                 self.workbenchs[workbench_buy].loc, workbench_block, not self.blue_flag, True)
@@ -138,7 +140,7 @@ class Controller:
             if not min_path_length or len(buy_path) + len(block_path) < min_path_length:
                 min_path_length = len(buy_path) + len(block_path)
                 robot.set_plan(workbench_buy, workbench_block)
-        if min_path_length:
+        if min_path_length and min_path_length < self.MAX_BUY_ZAI:
             return True
         else:
             block_path = self.m_map.get_path(

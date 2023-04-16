@@ -166,10 +166,10 @@ class Workmap:
                     x, y = tmp_blocks[0]
                     if x == 0 or y == 0:  # 必须是四个角上
                         continue
-                    flag1 = 0 <= j - 2 * x <= 99 and 0 <= i + y <= 99 and self.map_gray[j - 2 * x][i] != self.BLOCK and \
-                        self.map_gray[j - 2 * x][i + y] != self.BLOCK
-                    flag2 = 0 <= i - 2 * x <= 99 and 0 <= j + y <= 99 and self.map_gray[i - 2 * x][j] != self.BLOCK and \
-                        self.map_gray[i - 2 * x][j + y] != self.BLOCK
+                    flag1 = 0 <= j - 2 * y <= 99 and self.map_gray[i][j - 2 * y] != self.BLOCK and \
+                        self.map_gray[i + x][j - 2 * y] != self.BLOCK
+                    flag2 = 0 <= i + 2 * x <= 99 and self.map_gray[i + 2 * x][j] != self.BLOCK and \
+                        self.map_gray[i + 2*x][j + y] != self.BLOCK
                     if flag1 and flag2:
                         self.map_gray[i][j] = self.BROAD_ROAD
                         # 要根据具体情况加偏移量
@@ -195,6 +195,20 @@ class Workmap:
                     if (i == 0 or j == 99 or self.map_gray[i - 1][j + 1] == self.BLOCK) and (
                             i == 99 or j == 0 or self.map_gray[i + 1][j - 1] == self.BLOCK):
                         self.map_gray[i][j] = self.GROUND
+                    continue
+                '''
+                  .
+
+                .  
+                '''
+                if (i == 0 or j == 0 or self.map_gray[i - 1][j - 1] == self.BLOCK) and (
+                        i == 99 or j == 99 or self.map_gray[i + 1][j + 1] == self.BLOCK):
+                    if i > 0:
+                        self.map_gray[i -
+                                      1][j] = min(self.GROUND, self.map_gray[i-1][j])
+                    if j > 0:
+                        self.map_gray[i][j -
+                                         1] = min(self.GROUND, self.map_gray[i][j-1])
         all_workbench = copy.copy(self.workbenchs_loc_red)
         all_workbench.update(self.workbenchs_loc_blue)
         for (i, j), (w_type, _) in all_workbench.items():  # 集中处理工作台
