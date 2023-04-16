@@ -9,13 +9,14 @@ from tools import *
 
 
 class Robot:
-    # 状态常量 0 空闲, 1 购买途中, 2 等待购买, 3 出售途中, 4 等待出售, 5 避撞
+    # 状态常量 0 空闲, 1 购买途中, 2 等待购买, 3 出售途中, 4 等待出售, 5 避撞, 6阻止对方
     FREE_STATUS = 0
     MOVE_TO_BUY_STATUS = 1
     WAIT_TO_BUY_STATUS = 2
     MOVE_TO_SELL_STATUS = 3
     WAIT_TO_SELL_STATUS = 4
     AVOID_CLASH = 5
+    BLOCK_OTRHER = 6
 
     def __init__(self, ID: int, loc: Tuple[int]):
         self.ID = ID
@@ -34,6 +35,8 @@ class Robot:
         self.target_workbench_list = []  # 可到达的工作台列表
         self.anoter_workbench_list = []  # 可到达的敌方工作台列表
         self.path = []
+        self.block_model = False # 崽种模式
+        self.free_frames = 0 # 空闲帧数
 
         # 关于检测机器人对眼死锁的成员变量
         self.pre_position = np.array(list(self.loc))

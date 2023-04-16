@@ -51,7 +51,7 @@ class Workmap:
         self.robots_loc_red: dict = {}  # k 机器人坐标点 v 机器人ID
         self.workbenchs_loc_red: dict = {}  # k 工作台坐标点 v (工作台类型, 工作台ID)
 
-        self.unreanchble_warkbench = set()  # 记录不能正常使用的工作台
+        self.unreanchble_workbench = set()  # 记录不能正常使用的工作台
         self.broad_shifting = {}  # 有些特殊宽路的偏移量
 
     def loc_int2float_normal(self, i: int, j: int):
@@ -87,8 +87,8 @@ class Workmap:
         i = round(100 - (y + 0.25) * 2)
         j = round((x - 0.25) * 2)
         return i, j
-    
-    def get_robots(self, blue:bool):
+
+    def get_robots(self, blue: bool):
         '''
         根据颜色获取机器人字典
         '''
@@ -96,8 +96,8 @@ class Workmap:
             return self.robots_loc_blue
         else:
             return self.robots_loc_red
-    
-    def get_workbenchs(self, blue:bool):
+
+    def get_workbenchs(self, blue: bool):
         '''
         根据颜色获取工作台字典
         '''
@@ -166,10 +166,10 @@ class Workmap:
                     x, y = tmp_blocks[0]
                     if x == 0 or y == 0:  # 必须是四个角上
                         continue
-                    flag1 = 0 <= j - 2 * x <= 99 and 0 <= i + y <= 99 and self.map_gray[j - 2 * x][i] != self.BLOCK and \
-                        self.map_gray[j - 2 * x][i + y] != self.BLOCK
-                    flag2 = 0 <= i - 2 * x <= 99 and 0 <= j + y <= 99 and self.map_gray[i - 2 * x][j] != self.BLOCK and \
-                        self.map_gray[i - 2 * x][j + y] != self.BLOCK
+                    flag1 = 0 <= j - 2 * y <= 99 and self.map_gray[i][j - 2 * y] != self.BLOCK and \
+                        self.map_gray[i + x][j - 2 * y] != self.BLOCK
+                    flag2 = 0 <= i + 2 * x <= 99 and self.map_gray[i + 2 * x][j] != self.BLOCK and \
+                        self.map_gray[i + 2*x][j + y] != self.BLOCK
                     if flag1 and flag2:
                         self.map_gray[i][j] = self.BROAD_ROAD
                         # 要根据具体情况加偏移量
@@ -187,9 +187,7 @@ class Workmap:
                 if self.map_gray[i][j] == self.BROAD_ROAD:
                     continue
                 for x, y in itertools.product([0, 1], repeat=2):
-                    if i + x > 99 or j + y > 99:
-                        continue
-                    if self.map_gray[i + x][j + y] == self.BLOCK:
+                    if i + x > 99 or j + y > 99 or self.map_gray[i + x][j + y] == self.BLOCK:
                         break
                 else:
                     self.map_gray[i][j] = self.ROAD
@@ -197,6 +195,20 @@ class Workmap:
                     if (i == 0 or j == 99 or self.map_gray[i - 1][j + 1] == self.BLOCK) and (
                             i == 99 or j == 0 or self.map_gray[i + 1][j - 1] == self.BLOCK):
                         self.map_gray[i][j] = self.GROUND
+                    continue
+                '''
+                  .
+
+                .  
+                '''
+                if (i == 0 or j == 0 or self.map_gray[i - 1][j - 1] == self.BLOCK) and (
+                        i == 99 or j == 99 or self.map_gray[i + 1][j + 1] == self.BLOCK):
+                    if i > 0:
+                        self.map_gray[i -
+                                      1][j] = min(self.GROUND, self.map_gray[i-1][j])
+                    if j > 0:
+                        self.map_gray[i][j -
+                                         1] = min(self.GROUND, self.map_gray[i][j-1])
         all_workbench = copy.copy(self.workbenchs_loc_red)
         all_workbench.update(self.workbenchs_loc_blue)
         for (i, j), (w_type, _) in all_workbench.items():  # 集中处理工作台
@@ -207,24 +219,24 @@ class Workmap:
                 if i + x < 0 or i + x > 99 or j + y < 0 or j + y > 99 or self.map_gray[i + x][j + y] == self.BLOCK:
                     tmp_blocks.append((x, y))
             if len(tmp_blocks) > 2:
-                self.unreanchble_warkbench.add((i, j))
+                self.unreanchble_workbench.add((i, j))
                 continue
             elif len(tmp_blocks) == 2:  # 两个障碍
                 if 4 <= w_type <= 9:  # 这类是一定要卖给它东西的, 直接标记为不能用
-                    self.unreanchble_warkbench.add((i, j))
+                    self.unreanchble_workbench.add((i, j))
                     continue
                 # 对于1-3 只有两个障碍是对角的形式才行
                 if tmp_blocks[0][0] == tmp_blocks[1][0] or tmp_blocks[0][1] == tmp_blocks[1][1]:
-                    self.unreanchble_warkbench.add((i, j))
+                    self.unreanchble_workbench.add((i, j))
                     continue
             elif 4 <= w_type <= 9:  # 四个角占用两个以上的没法卖
                 if (i == 0 or j == 0 or self.map_gray[i - 1][j - 1] == self.BLOCK) and (
                         i == 99 or j == 99 or self.map_gray[i + 1][j + 1] == self.BLOCK):
-                    self.unreanchble_warkbench.add((i, j))
+                    self.unreanchble_workbench.add((i, j))
                     continue
                 if (i == 0 or j == 99 or self.map_gray[i - 1][j + 1] == self.BLOCK) and (
                         i == 99 or j == 0 or self.map_gray[i + 1][j - 1] == self.BLOCK):
-                    self.unreanchble_warkbench.add((i, j))
+                    self.unreanchble_workbench.add((i, j))
                     continue
             # else 其他情况路径不可能规划到那, 暂时不作处理
 
@@ -235,7 +247,7 @@ class Workmap:
                     continue
                 # 十字区域都是宽路即可
                 for x, y in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                    if self.map_gray[i][j] < self.BROAD_ROAD or (i, j) in self.broad_shifting:
+                    if self.map_gray[i+x][j+y] < self.BROAD_ROAD or (i+x, j+y) in self.broad_shifting:
                         break
                 else:
                     self.map_gray[i][j] = self.SUPER_BROAD_ROAD
@@ -276,12 +288,12 @@ class Workmap:
                     if (n_x, n_y) in robots_loc:  # 访问到其他机器人
                         visited_robot.append(robots_loc[(n_x, n_y)])
                     # 访问到自己的工作台, 只关心1-7，因为空手去89没有意义
-                    elif (n_x, n_y) in workbenchs_loc and (n_x, n_y) not in self.unreanchble_warkbench:
+                    elif (n_x, n_y) in workbenchs_loc and (n_x, n_y) not in self.unreanchble_workbench:
                         w_type, idx = workbenchs_loc[(n_x, n_y)]
-                        if 1<=w_type<=7:
+                        if 1 <= w_type <= 7:
                             visited_workbench.append(idx)  # 将这个工作台添加到列表
                     # 敌方的全部要管
-                    elif (n_x, n_y) in workbenchs_loc_another and (n_x, n_y) not in self.unreanchble_warkbench:
+                    elif (n_x, n_y) in workbenchs_loc_another and (n_x, n_y) not in self.unreanchble_workbench:
                         visited_workbench_another.append(
                             workbenchs_loc_another[(n_x, n_y)][1])  # 将这个工作台添加到敌方列表
 
@@ -320,7 +332,7 @@ class Workmap:
                     # 因为是卖的过程，必须是宽路
                     if n_x > 99 or n_y > 99 or n_x < 0 or n_y < 0 or visited_loc[n_x][n_y]:
                         continue
-                    if (n_x, n_y) in workbenchs_loc and (n_x, n_y) not in self.unreanchble_warkbench:
+                    if (n_x, n_y) in workbenchs_loc and (n_x, n_y) not in self.unreanchble_workbench:
                         visited_workbench.append(
                             workbenchs_loc[(n_x, n_y)])  # 将这个工作台添加到列表
                     visited_loc[n_x][n_y] = True
@@ -403,7 +415,7 @@ class Workmap:
             else:
                 workbenchs_loc = self.workbenchs_loc_red
             for loc, (_, idx) in workbenchs_loc.items():
-                if loc in self.unreanchble_warkbench:
+                if loc in self.unreanchble_workbench:
                     continue
                 x, y = loc
                 if blue_flag:
@@ -435,6 +447,7 @@ class Workmap:
             low_value = self.BROAD_ROAD
         else:
             low_value = self.ROAD
+            low_value = self.BROAD_ROAD
         node_x, node_y = self.loc_float2int(*wait_flaot_loc)
         tmp_blocks = {}  # 将其他机器人及其一圈看做临时障碍物
         path_map = {(node_x, node_y): (node_x, node_y)}  # 记录路径
@@ -488,7 +501,7 @@ class Workmap:
                 *path[-i], self.map_gray[x][y] == self.ROAD))
         return float_path
 
-    def get_float_path(self, float_loc, workbench_ID, blue:bool, broad_road=False):
+    def get_float_path(self, float_loc, workbench_ID, blue: bool, broad_road=False):
         '''
         获取浮点型的路径
         float_loc: 当前位置的浮点坐标
@@ -510,7 +523,7 @@ class Workmap:
         path[-1] = self.loc_int2float_normal(*path[-1])
         return path
 
-    def get_better_path(self, float_loc, workbench_ID, blue:bool, threshold=15):
+    def get_better_path(self, float_loc, workbench_ID, blue: bool, threshold=15):
         '''
         同时计算宽路和窄路，如果宽路比窄路多走不了阈值, 就选宽路
         threshold: 阈值，如果宽路窄路都有，宽路比窄路多走不了阈值时走宽路
@@ -525,7 +538,7 @@ class Workmap:
             return path1
         return path2
 
-    def get_path(self, float_loc, workbench_ID, blue:bool, broad_road=False):
+    def get_path(self, float_loc, workbench_ID, blue: bool, broad_road=False):
         '''
         获取某点到某工作台的路径
         float_loc: 当前位置的浮点坐标

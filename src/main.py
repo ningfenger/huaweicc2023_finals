@@ -39,6 +39,7 @@ if __name__ == '__main__':
         loc = workmap.loc_int2float_normal(i,j)
         workbenchs[idx] = Workbench(idx, wb_type, loc)
     workmap.init_roads()
+    workmap.draw_map()
     r2ws, r2ws_another = workmap.robot2workbench(blue_flag)
     # 可达的我方工作台
     for idx, r2w in enumerate(r2ws):
@@ -51,6 +52,13 @@ if __name__ == '__main__':
     # 计算一下路径
     workmap.gen_paths()
     controller = Controller(robots, workbenchs, workmap, blue_flag)
+    # controller.init_workbench_other()
+    # controller.attack_all()
+    try:
+        controller.init_workbench_other()
+        controller.attack_all()
+    except BaseException as e:
+        sys.stderr.write(f'{e}\n')
     finish()
 
     while True:
