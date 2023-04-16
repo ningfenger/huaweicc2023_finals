@@ -661,7 +661,6 @@ class Controller:
         robot = self.robots[idx_robot]
         robot_loc_m = np.array(robot.loc).copy()
         path_loc_m = robot.path.copy()
-
         vec_r2p = robot_loc_m - path_loc_m
         dis_r2p = np.sqrt(np.sum(vec_r2p ** 2, axis=1))
         mask_greater = dis_r2p < 40
@@ -1080,7 +1079,7 @@ class Controller:
             robot.status = Robot.MOVE_TO_SELL_STATUS
         elif robot.status == Robot.BLOCK_OTRHER:
             robot.set_path(self.m_map.get_float_path(
-                robot.loc, robot.target, not self.blue_flag, True))
+                robot.loc, robot.target, not self.blue_flag, robot.item_type > 0))
 
     def process_deadlock(self, robot1_idx, robot2_idx, priority_idx=-1, safe_dis: float = None):
         '''
