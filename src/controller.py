@@ -77,7 +77,7 @@ class Controller:
         self.attacked = set()  # 记录已被攻击的工作台
         self.no_use_attack = set()  # 记录无需被攻击的工作台 ？
         self.can_not_reach_workbenchs = {} # 记录无法到达的工作台即持续帧数
-
+        self.rival_list = []
     def set_control_parameters(self, move_speed: float, max_wait: int, sell_weight: float, sell_debuff: float):
         '''
         设置参数， 建议取值范围:
@@ -1667,6 +1667,7 @@ class Controller:
         for robot in self.robots:
             self.detect_rival_item(robot, 20, rival_list)
 
+        self.rival_list = rival_list
         if len(rival_list) > 0:
             time.sleep(1)
             a = 111111111111

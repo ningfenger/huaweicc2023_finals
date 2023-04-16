@@ -66,6 +66,33 @@ def show(idx_robot, map:workmap.Workmap, controller:Controller):
     pass
 
 
+def show2(map:workmap.Workmap, controller:Controller):
+    fig = plt.figure(figsize=(20, 16))
+    plt.imshow(map.map_gray[::-1], origin='lower', extent=[0, 50, 0, 50])
+    for robot in controller.robots:
+        # robot = controller.robots[idx_robot]
+        plt.plot(robot.path[:, 0], robot.path[:, 1])
+        plt.plot(robot.loc[0], robot.loc[1], 'o')
+        theta_radar = robot.radar_info_theta
+        radar_x = robot.radar_info_x
+        radar_y = robot.radar_info_y
+
+        mask = detect_rival(robot)
+
+        # 绘制雷达包围圈
+        plt.plot(radar_x, radar_y)
+
+        # 绘敌方机器人制候选点
+        plt.plot(radar_x[mask], radar_y[mask], 'r.')
+
+        # 绘制当前机器人临时目标点
+        plt.plot(robot.temp_target[0], robot.temp_target[1], 'b*')
+
+    for item_rival in controller.rival_list:
+        plt.plot(item_rival[0][0], item_rival[0][1], 'r*', markersize=15)
+
+    plt.show()
+    pass
 
 if __name__ == '__main__':
     idx_robot = 0
@@ -74,5 +101,5 @@ if __name__ == '__main__':
     map.read_map_directly('F:/huaweicc/maps/3.txt')
     map.draw_map()
     controller = load_controller()
-    show(idx_robot, map, controller)
+    show2(map, controller)
     pass
