@@ -305,6 +305,7 @@ class Controller:
                 robot.frame_reman_sell = min_sell_frame
                 # 预售
                 self.workbenchs[robot.get_sell()].pro_sell(item_type, True)
+                robot.target = robot.get_sell()
                 self.re_path(robot)
                 return
             else:
