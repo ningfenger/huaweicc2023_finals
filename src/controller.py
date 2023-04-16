@@ -10,6 +10,7 @@ import tools
 import math
 import copy
 from functools import cmp_to_key
+from collections import deque
 
 '''
 控制类 决策，运动
@@ -46,10 +47,14 @@ class Controller:
 
     # 最长空闲帧数, 一直空闲切换为捣乱模式
     MAX_FREE = 10*50
-
+    # 最长超时, 超时放弃此目标
+    MAX_TIME_OUT = -10*50
     # 最长买卖路途， 如果太长直接崽人
     MAX_BUY_ZAI = 30*6*2
-    FLAG_HUQ = True
+
+    # 最多不可达工作台帧数, 超时重置为可达
+    MAX_CAN_NOT_REACH = 2*50
+
 
     def __init__(self, robots: List[Robot], workbenchs: List[Workbench], m_map: Workmap, blue_flag: bool):
         self.robots = robots
@@ -62,10 +67,13 @@ class Controller:
         self.buy_list = []  # 执行过出售操作的机器人列表
         self.sell_list = []  # 执行过购买操作的机器人列表
         self.tmp_avoid = {}  # 暂存避让计算结果
+        
+        # 攻守
         self.other_workbenchs = [[]for _ in range(9)]  # 按类型记录敌方工作台 idx 类型 v 编号
         self.other_workbenchs_order = list(range(1, 9))  # 按进攻优先级排序
         self.attacked = set()  # 记录已被攻击的工作台
         self.no_use_attack = set()  # 记录无需被攻击的工作台 ？
+        self.can_not_reach_workbenchs = {} # 记录无法到达的工作台即持续帧数
 
     def set_control_parameters(self, move_speed: float, max_wait: int, sell_weight: float, sell_debuff: float):
         '''
@@ -259,6 +267,55 @@ class Controller:
         r_loc = self.robots[idx_robot].loc
         return np.sqrt((r_loc[0] - w_loc[0]) ** 2 + (r_loc[1] - w_loc[1]) ** 2)
 
+    def re_mession(self, robot: Robot):
+        '''
+        当机器人长期无法完成任务时，尝试切换机器人状态
+        '''
+        robot.frame_reman_buy = 0
+        robot.frame_reman_sell = 0
+        sell_idx = robot.get_sell()
+        buy_idx = robot.get_buy()
+        # 取消预售预购
+        self.workbenchs[buy_idx].pro_buy(False)
+        self.workbenchs[sell_idx].pro_sell(self.workbenchs[robot.get_buy()].typeID, False)
+        # 手中持有物品
+        if robot.item_type > 0:
+            item_type = robot.item_type
+            self.can_not_reach_workbenchs[sell_idx] = 0
+            # 尝试找个地方卖了
+            min_sell_frame = None
+            for idx_workbench_to_sell in self.workbenchs[robot.get_buy()].target_workbench_list:
+                if idx_workbench_to_sell in self.can_not_reach_workbenchs:
+                    continue
+                workbench_sell = self.workbenchs[idx_workbench_to_sell]
+                if workbench_sell.check_material_pro(item_type):
+                    continue
+                if workbench_sell.check_material(item_type):
+                    continue
+                # frame_move_to_buy, frame_move_to_sell= self.get_time_rww(idx_robot, idx_workstand, idx_worksand_to_sell)
+                frame_move_to_sell = len(self.m_map.get_path(robot.loc, idx_workbench_to_sell, self.blue_flag,
+                                                             True)) * self.MOVE_SPEED
+                if not min_sell_frame or min_sell_frame > frame_move_to_sell:
+                    min_sell_frame = frame_move_to_sell
+                    robot.set_plan(robot.get_buy(), idx_workbench_to_sell)
+                    robot.frame_reman_sell = frame_move_to_sell
+            if min_sell_frame:
+                robot.status = Robot.MOVE_TO_SELL_STATUS
+                # 重设超时时间
+                robot.frame_reman_sell = min_sell_frame
+                # 预售
+                self.workbenchs[robot.get_sell()].pro_sell(item_type, True)
+                self.re_path(robot)
+                return
+            else:
+                robot.destroy()
+        else:
+            # 设置工作台不可达状态
+            self.can_not_reach_workbenchs[buy_idx] = 0
+        # 重置为空闲状态
+        robot.status = Robot.FREE_STATUS
+
+    
     def detect_deadlock(self, frame):
         # if frame % 10 != 0:
         #     return
@@ -980,10 +1037,10 @@ class Controller:
         if sb_safe_dis:
             # 保持安全车距等待买卖
             print("forward", idx_robot, (d - self.WILL_CLASH_DIS-0.1) * 6)
-        elif abs(delta_theta) > math.pi * 5 / 6 and dis_target < 2 and self.FLAG_HUQ:
-            # 角度相差太大倒车走
-            print("forward", idx_robot, -2)
-            # delta_theta += math.pi
+        # elif abs(delta_theta) > math.pi * 5 / 6 and dis_target < 2:
+        #     # 角度相差太大倒车走
+        #     print("forward", idx_robot, -2)
+        #     # delta_theta += math.pi
         elif abs(delta_theta) > math.pi / 6:
             # 角度相差较大 原地转向
             print("forward", idx_robot, 0)
@@ -1010,6 +1067,8 @@ class Controller:
         # 进行一次决策
         max_radio = 0  # 记录最优性价比
         for idx_workbench_to_buy in robot.target_workbench_list:
+            if idx_workbench_to_buy in self.can_not_reach_workbenchs:
+                continue
             workbench_buy = self.workbenchs[idx_workbench_to_buy]
             if workbench_buy.product_time == -1 and workbench_buy.product_status == 0 or workbench_buy.product_pro == 1:  # 被预定了,后序考虑优化
                 continue
@@ -1023,8 +1082,11 @@ class Controller:
                 continue
             # 需要这个产品的工作台
             for idx_workbench_to_sell in workbench_buy.target_workbench_list:
+                if idx_workbench_to_sell in self.can_not_reach_workbenchs:
+                    continue
                 workbench_sell = self.workbenchs[idx_workbench_to_sell]
                 if workbench_sell.check_material_pro(workbench_buy.typeID):
+                    # sys.stderr.write(f"idx_workbench_to_sell:{idx_workbench_to_sell}\n")
                     continue
                 # 格子里有这个原料
                 # 判断是不是8或9 不是8或9 且这个原料格子已经被占用的情况, 生产完了并不一定能继续生产
@@ -1203,7 +1265,8 @@ class Controller:
                 else:
                     robot.free_frames += 1
                     if robot.free_frames > self.MAX_FREE:
-                        self.attack_one(robot)
+                        pass
+                        # self.attack_one(robot)
                     else:
                         robot.forward(9)
                         robot.rotate(4)
@@ -1315,9 +1378,23 @@ class Controller:
             # 根据状态更新预估时间
             self.tmp_avoid.clear()
             robot.update_frame_reman()
+            # 严重超时, 重新规划, 对手里有东西的稍微宽容一点
+            if robot.get_frame_reman() < self.MAX_TIME_OUT * (1 if robot.item_type ==0 else 1.5) and robot.item_type!=7:
+                self.re_mession(robot)
             idx_robot += 1
         for idx_robot in sell_out_list:
             robot = self.robots[idx_robot]
             workbench_sell = self.workbenchs[robot.get_sell()]
             workbench_sell.pro_sell(robot.item_type, False)
-        # 一些处理长时间买卖失败的策略 还没想好怎么办
+        # 处理一下工作台
+        recorve_w_idx = [] # 记录可以恢复的工作台
+        for w_idx, frames in self.can_not_reach_workbenchs.items():
+            self.can_not_reach_workbenchs[w_idx]+=1
+            if frames >= self.MAX_CAN_NOT_REACH:
+                recorve_w_idx.append(w_idx)
+        # 取消不可达状态
+        for w_idx in recorve_w_idx:
+            self.can_not_reach_workbenchs.pop(w_idx)
+        # sys.stderr.write(f"can_not_reach_workbenchs:{self.can_not_reach_workbenchs}\n")
+
+
