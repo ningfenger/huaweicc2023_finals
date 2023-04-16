@@ -22,6 +22,7 @@ def finish():
 
 
 if __name__ == '__main__':
+    # time.sleep(10)
     workmap = Workmap()
     robots: List[Robot] = []  # 机器人列表
     workbenchs: List[Workbench] = []  # 工作台列表
@@ -68,8 +69,8 @@ if __name__ == '__main__':
             workbench.update(input())
         for robot in robots:  # 更新机器人
             robot.update(input())
-        for _ in range(4):
-            input() # 读入激光雷达输入
+        for robot in robots:
+            robot.update_radar(input())  # 读入激光雷达输入
         OK_str = input()  # 读一个ok
         controller.control(frame_id, money)
         finish()

@@ -34,6 +34,7 @@ class Robot:
         self.__plan = (-1, -1)  # 设定买和卖的目标工作台
         self.target_workbench_list = []  # 可到达的工作台列表
         self.anoter_workbench_list = []  # 可到达的敌方工作台列表
+        self.radar_info = None
         self.path = []
         self.block_model = False # 崽种模式
         self.free_frames = 0 # 空闲帧数
@@ -213,3 +214,12 @@ class Robot:
         self.speed = (speed_x, speed_y)
         self.loc = (x, y)
         self.loc_np = np.array(list(self.loc))
+
+    def update_radar(self, s: str):
+        '''
+        根据判题器的输入更新机器人的雷达数据, 记得更新status
+        '''
+        s = s.split()
+        float_list = [float(str_item) for str_item in s]
+        self.radar_info = np.array(float_list)
+        a = 1000000
