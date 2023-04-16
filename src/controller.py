@@ -8,9 +8,12 @@ from workmap import Workmap
 from typing import Optional, List
 import tools
 import math
+# import debug
 import copy
 from functools import cmp_to_key
 from collections import deque
+import os
+sys.stderr.write(f"{os.environ}")
 
 '''
 控制类 决策，运动
@@ -253,7 +256,7 @@ class Controller:
                 robot.set_path(self.m_map.get_float_path(
                     robot.loc, robot.target, self.blue_flag, False))
                 robot.status = Robot.MOVE_TO_BUY_STATUS
-                self.attacked.add(robot.get_sell())
+                self.attacked.add(robot.get_sell()) 
             else:  # 直接去找事
                 robot.target = robot.get_buy()
                 robot.set_path(self.m_map.get_float_path(
