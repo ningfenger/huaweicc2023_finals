@@ -1,5 +1,7 @@
 # coding=utf-8
 import sys
+import time
+
 import numpy as np
 import random
 from robot import Robot
@@ -917,7 +919,7 @@ class Controller:
                 dis_rel = np.sqrt(radar_rel_x ** 2 + radar_rel_y ** 2)
 
                 # 距离已知敌方机器人远的才是潜在的敌方机器人
-                mask_filter_temp = dis_rel > r_filter + 0.001
+                mask_filter_temp = dis_rel > r_filter + 0.01
 
                 # 按位与更新
                 mask_filter = mask_filter & mask_filter_temp
@@ -936,9 +938,9 @@ class Controller:
 
             # 己方机器人半径
             if robot_filter.item_type == 0:
-                r_filter = 0.53
-            else:
                 r_filter = 0.45
+            else:
+                r_filter = 0.53
 
             # 相对于己方机器人的xy
             radar_rel_x = radar_x - loc_filter[0]
@@ -1206,7 +1208,11 @@ class Controller:
         else:
             delta_theta = (delta_theta +
                            math.pi) % (2 * math.pi) - math.pi
-            if sb_safe_dis:
+            if self.rivals_on_targets(idx_robot, 0.7) and dis2workbench < 5 and delta_theta < math.pi / 4:
+                # 检测冲撞失败 后退重新冲 并记录次数
+                print("forward", idx_robot, 10)
+                sys.stderr.write(f'{robot.loc}冲啊！！！\n')
+            elif sb_safe_dis:
                 # 保持安全车距等待买卖
                 print("forward", idx_robot, (d - self.WILL_CLASH_DIS-0.1) * 6)
             # elif abs(delta_theta) > math.pi * 5 / 6 and dis_target < 2:
@@ -1216,10 +1222,9 @@ class Controller:
             elif abs(delta_theta) > math.pi / 6:
                 # 角度相差较大 原地转向
                 print("forward", idx_robot, 0)
+
             elif dis2workbench < 1.5:
-
                 print("forward", idx_robot, dis2workbench * 6)
-
             else:
                 print("forward", idx_robot, (dis_target) * 10)
 
@@ -1601,10 +1606,18 @@ class Controller:
         # 检测是否有对手在目标点
         robot = self.robots[idx_robot]
         idx_workbench = robot.target
+
+        # 目标工作台坐标
         target_loc = self.workbenchs[idx_workbench].loc if self.robots[idx_robot].status != Robot.BLOCK_OTRHER else self.rival_workbenchs[idx_workbench].loc
         for rival in self.rival_list:
+            # 取出敌人列表 的 坐标
             loc_rival, _ = rival
-            # if np. < thr_dis:
+            if np.sqrt((loc_rival[0] - target_loc[0]) ** 2 + (loc_rival[1] - target_loc[1]) ** 2) < thr_dis:
+                # 距离过近
+                sys.stderr.write(f'{idx_workbench}')
+                return True
+        # 不存在距离过近的敌人
+        return False
 
     def control(self, frame_id: int, money: int):
         self.process_long_deadlock(frame_id)
