@@ -66,7 +66,6 @@ class Robot:
         self.radar_info_theta = None
         self.radar_info_x = None
         self.radar_info_y = None
-        self.radar_info_obt = None
 
     def get_frame_reman(self):
         '''
@@ -231,5 +230,3 @@ class Robot:
         self.radar_info_dis = np.array(float_list)
         self.radar_info_x = self.radar_info_dis * np.cos(self.radar_info_theta) + self.loc[0]
         self.radar_info_y = self.radar_info_dis * np.sin(self.radar_info_theta) + self.loc[1]
-        mask = is_multiple_of_half(self.radar_info_x) & is_multiple_of_half(self.radar_info_y)
-        self.radar_info_obt = np.logical_not(mask)

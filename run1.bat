@@ -1,0 +1,1 @@
+robot_gui.exe "python src\main.py" Demo\SimpleDemo.exe -m maps\1.txt

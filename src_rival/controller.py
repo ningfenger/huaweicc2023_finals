@@ -870,21 +870,14 @@ class Controller:
         return offset
 
     def obt_near(self, robot):
-        # 更新实现，利用官方雷达
-        # 提取打到障碍物激光点的距离
-        dis_obt = robot.radar_info_dis[robot.radar_info_obt]
-
-        # 判定小于阈值的点
-        judge = dis_obt < 0.7
-
-        # 存在 返回
-        if judge.any():
-            # 周围有障碍物
-            return False
-        else:
-            # 周围没有障碍物
-            return True
-
+        row, col = self.m_map.loc_float2int(*robot.loc)
+        for row_offset, col_offset in Workmap.TURNS:
+            new_row = row + row_offset
+            new_col = col + col_offset
+            if new_col < 0 or new_col > 99 or new_row < 0 or new_row > 99 or self.m_map.map_gray[new_row][
+                    new_col] == Workmap.BLOCK:
+                return False
+        return True
 
     def obt_near_count(self, robot):
         row, col = self.m_map.loc_float2int(*robot.loc)
@@ -961,8 +954,8 @@ class Controller:
         radar_y = robot.radar_info_y
 
         # mask为true表示为潜在的机器人 通过已知障碍物排除
-        # mask = tools.is_multiple_of_half(radar_y) & tools.is_multiple_of_half(radar_x)
-        mask = np.logical_not(robot.radar_info_obt)
+        mask = tools.is_multiple_of_half(radar_y) & tools.is_multiple_of_half(radar_x)
+
         # 相对于当前机器人的xy
         radar_rel_x = radar_x - loc_this[0]
         radar_rel_y = radar_y - loc_this[1]
@@ -1084,100 +1077,7 @@ class Controller:
                     target_idx = robot.find_temp_tar_idx()
                     target_loc = robot.path[target_idx, :]
                 robot.temp_target = target_loc
-        # 因为移动过程中可能导致阻塞而避让, 可以解除顶牛, 可能导致HUQ
-        col_flag = False
-        # 因为买卖而产生的避让
-        sb_flag = False
-        # 是否要采取保持距离的方式
-        sb_safe_dis = False
-        d = 100
-        # 要避让的机器人序号
-        idx_huq = -1
-        for idx_other in range(4):
-            if not idx_other == idx_robot:
-                d = min(self.get_other_col_info2(
-                    idx_robot, idx_other), d)
-                if d < self.WILL_CLASH_DIS:
-                    col_flag = True
-                    idx_huq = idx_other
-                    break
-        robot_target = robot.target
-        # 初始化一个较大值
-        other_dis2workbench = self.WILL_HUQ_DIS
-
-        if dis2workbench < self.WILL_HUQ_DIS and not col_flag and robot.status in [Robot.MOVE_TO_BUY_STATUS,
-                                                                                   Robot.WAIT_TO_BUY_STATUS]:
-            for idx_other in range(4):
-                # 锐总说这不合适吧
-                if (not idx_other == idx_robot) and self.robots[idx_other].frame_wait == 0 and robot_target == \
-                        self.robots[idx_other].target:
-                    # 另一个机器人到工作台的距离
-                    other_dis2workbench = self.dis2target(idx_other)
-                    status_other = self.robots[idx_other].status
-                    if other_dis2workbench > self.WILL_HUQ_DIS:
-                        continue
-                    # 买的让卖的
-                    if status_other in [Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS]:
-                        sb_flag = True
-                    # 同买, 近的让远的
-                    elif status_other in [Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS]:
-                        if dis2workbench > other_dis2workbench:
-                            sb_flag = True
-                        elif dis2workbench == other_dis2workbench and idx_robot > idx_other:
-                            sb_flag = True
-                    if sb_flag:
-                        idx_huq = idx_other
-                        break
-        if sb_flag and dis2workbench > other_dis2workbench:
-            sb_safe_dis = True
-
-        if col_flag or (sb_flag and not sb_safe_dis):
-            priority_idx = -1
-            if col_flag:
-                status_huq = self.robots[idx_huq].status
-                huq_dis2workbench = self.dis2target(idx_huq)
-                if robot_target == self.robots[idx_huq].target:
-                    # 我买对方卖
-                    if robot.status in [Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS] and status_huq in [
-                            Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS]:
-                        priority_idx = idx_robot
-                    # 我卖对方买
-                    elif robot.status in [Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS] and status_huq in [
-                            Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS]:
-                        priority_idx = idx_huq
-                    # 同买同卖
-                    else:
-                        if dis2workbench > huq_dis2workbench:
-                            priority_idx = idx_robot
-                        elif dis2workbench < huq_dis2workbench:
-                            priority_idx = idx_huq
-            else:
-                priority_idx = idx_robot
-            self.re_path(robot)
-            self.re_path(self.robots[idx_huq])
-            avoid_idx, avoid_path = self.process_deadlock(
-                idx_robot, idx_huq, priority_idx)
-            # sys.stderr.write(f"avoid_idx: {avoid_idx}\n")
-            if avoid_idx == -1:
-                # sys.stderr.write(
-                #     f"REVERSE idx_robot: {idx_robot}\n")
-                # 如果出现可能有坑 一个机器人堵了两个机器人
-                sb_safe_dis = True
-                pass
-            elif avoid_idx == idx_robot:
-                # sys.stderr.write(f"idx_robot{idx_robot}, robot.item{robot.item_type}, avoid_path{avoid_path}\n")
-                self.robots[idx_robot].set_path(avoid_path)
-                self.robots[idx_robot].frame_wait = self.AVOID_FRAME_WAIT
-                # sys.stderr.write(f"idx_robot: {idx_robot}\n")
-                flag_obt_near = self.obt_near(robot)
-                if flag_obt_near:
-                    target_loc, target_idx = self.select_target(
-                        idx_robot)
-                else:
-                    target_idx = robot.find_temp_tar_idx()
-                    target_loc = robot.path[target_idx, :]
-                robot.temp_target = target_loc
-
+       
         # 根据给定目标点修正
         target_vec = [target_loc[0] - robot.loc[0],
                       target_loc[1] - robot.loc[1]]
@@ -1189,15 +1089,6 @@ class Controller:
         robot_theta = self.robots[idx_robot].toward
         delta_theta = target_theta - robot_theta
 
-        # 不确定用处大不大，暂时保留
-        # for idx_other in range(4):
-        #     if not idx_other == idx_robot:
-        #         if self.direct_colli(idx_robot, idx_other, thr_dis=6):
-        #             delta_theta -= math.pi / 5
-        #             break
-
-
-
         if dis2workbench < 3 and robot.status == Robot.BLOCK_OTRHER:
             print("forward", idx_robot, dis2workbench * 3)
             self.robots[idx_robot].rotate(delta_theta * k_r)
@@ -1206,14 +1097,8 @@ class Controller:
         else:
             delta_theta = (delta_theta +
                            math.pi) % (2 * math.pi) - math.pi
-            if sb_safe_dis:
-                # 保持安全车距等待买卖
-                print("forward", idx_robot, (d - self.WILL_CLASH_DIS-0.1) * 6)
-            # elif abs(delta_theta) > math.pi * 5 / 6 and dis_target < 2:
-            #     # 角度相差太大倒车走
-            #     print("forward", idx_robot, -2)
-            #     # delta_theta += math.pi
-            elif abs(delta_theta) > math.pi / 6:
+            
+            if abs(delta_theta) > math.pi / 6:
                 # 角度相差较大 原地转向
                 print("forward", idx_robot, 0)
             elif dis2workbench < 1.5:
@@ -1227,187 +1112,6 @@ class Controller:
                            math.pi) % (2 * math.pi) - math.pi
 
             self.robots[idx_robot].rotate(delta_theta * k_r)
-
-
-    def move_bck(self, idx_robot):
-    # 360雷达前的版本
-        robot = self.robots[idx_robot]
-        k_r = 8
-        flag_obt_near = self.obt_near(robot)
-
-        # 到工作台距离 用于判定是否接近道路终点
-        dis2workbench = self.dis2target(idx_robot)
-
-        # 判定是否有临时目标点
-        if self.robots[idx_robot].temp_target is None:
-            # 没有临时目标点则重新规划
-            self.re_path(robot)
-            if flag_obt_near:
-                target_loc, target_idx = self.select_target(idx_robot)
-            else:
-                target_idx = robot.find_temp_tar_idx()
-                target_loc = robot.path[target_idx, :]
-            robot.temp_target = target_loc
-        else:
-            # 有临时目标点
-            dis_temp_target = np.sqrt(
-                np.sum((robot.temp_target - np.array(robot.loc)) ** 2))
-            if (robot.frame_wait > 0 and dis_temp_target > 0.35) or (robot.frame_wait == 0 and dis_temp_target > 2):
-                # 距离大于给定值时 继续追踪
-                target_loc = robot.temp_target
-            else:
-                self.re_path(robot)
-                # 足够接近时 重新选择
-                if flag_obt_near:
-                    target_loc, target_idx = self.select_target(idx_robot)
-                else:
-                    target_idx = robot.find_temp_tar_idx()
-                    target_loc = robot.path[target_idx, :]
-                robot.temp_target = target_loc
-        # 因为移动过程中可能导致阻塞而避让, 可以解除顶牛, 可能导致HUQ
-        col_flag = False
-        # 因为买卖而产生的避让
-        sb_flag = False
-        # 是否要采取保持距离的方式
-        sb_safe_dis = False
-        d = 100
-        # 要避让的机器人序号
-        idx_huq = -1
-        for idx_other in range(4):
-            if not idx_other == idx_robot:
-                d = min(self.get_other_col_info2(
-                    idx_robot, idx_other), d)
-                if d < self.WILL_CLASH_DIS:
-                    col_flag = True
-                    idx_huq = idx_other
-                    break
-        robot_target = robot.target
-        # 初始化一个较大值
-        other_dis2workbench = self.WILL_HUQ_DIS
-
-        if dis2workbench < self.WILL_HUQ_DIS and not col_flag and robot.status in [Robot.MOVE_TO_BUY_STATUS,
-                                                                                   Robot.WAIT_TO_BUY_STATUS]:
-            for idx_other in range(4):
-                # 锐总说这不合适吧
-                if (not idx_other == idx_robot) and self.robots[idx_other].frame_wait == 0 and robot_target == \
-                        self.robots[idx_other].target:
-                    # 另一个机器人到工作台的距离
-                    other_dis2workbench = self.dis2target(idx_other)
-                    status_other = self.robots[idx_other].status
-                    if other_dis2workbench > self.WILL_HUQ_DIS:
-                        continue
-                    # 买的让卖的
-                    if status_other in [Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS]:
-                        sb_flag = True
-                    # 同买, 近的让远的
-                    elif status_other in [Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS]:
-                        if dis2workbench > other_dis2workbench:
-                            sb_flag = True
-                        elif dis2workbench == other_dis2workbench and idx_robot > idx_other:
-                            sb_flag = True
-                    if sb_flag:
-                        idx_huq = idx_other
-                        break
-        if sb_flag and dis2workbench > other_dis2workbench:
-            sb_safe_dis = True
-
-        if col_flag or (sb_flag and not sb_safe_dis):
-            priority_idx = -1
-            if col_flag:
-                status_huq = self.robots[idx_huq].status
-                huq_dis2workbench = self.dis2target(idx_huq)
-                if robot_target == self.robots[idx_huq].target:
-                    # 我买对方卖
-                    if robot.status in [Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS] and status_huq in [
-                            Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS]:
-                        priority_idx = idx_robot
-                    # 我卖对方买
-                    elif robot.status in [Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS] and status_huq in [
-                            Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS]:
-                        priority_idx = idx_huq
-                    # 同买同卖
-                    else:
-                        if dis2workbench > huq_dis2workbench:
-                            priority_idx = idx_robot
-                        elif dis2workbench < huq_dis2workbench:
-                            priority_idx = idx_huq
-            else:
-                priority_idx = idx_robot
-            self.re_path(robot)
-            self.re_path(self.robots[idx_huq])
-            avoid_idx, avoid_path = self.process_deadlock(
-                idx_robot, idx_huq, priority_idx)
-            # sys.stderr.write(f"avoid_idx: {avoid_idx}\n")
-            if avoid_idx == -1:
-                # sys.stderr.write(
-                #     f"REVERSE idx_robot: {idx_robot}\n")
-                # 如果出现可能有坑 一个机器人堵了两个机器人
-                sb_safe_dis = True
-                pass
-            elif avoid_idx == idx_robot:
-                # sys.stderr.write(f"idx_robot{idx_robot}, robot.item{robot.item_type}, avoid_path{avoid_path}\n")
-                self.robots[idx_robot].set_path(avoid_path)
-                self.robots[idx_robot].frame_wait = self.AVOID_FRAME_WAIT
-                # sys.stderr.write(f"idx_robot: {idx_robot}\n")
-                flag_obt_near = self.obt_near(robot)
-                if flag_obt_near:
-                    target_loc, target_idx = self.select_target(
-                        idx_robot)
-                else:
-                    target_idx = robot.find_temp_tar_idx()
-                    target_loc = robot.path[target_idx, :]
-                robot.temp_target = target_loc
-
-        # 根据给定目标点修正
-        target_vec = [target_loc[0] - robot.loc[0],
-                      target_loc[1] - robot.loc[1]]
-        dis_target = np.sqrt(np.dot(target_vec, target_vec))
-
-        target_theta = np.arctan2(
-            target_vec[1], target_vec[0])
-
-        robot_theta = self.robots[idx_robot].toward
-        delta_theta = target_theta - robot_theta
-
-        # 不确定用处大不大，暂时保留
-        # for idx_other in range(4):
-        #     if not idx_other == idx_robot:
-        #         if self.direct_colli(idx_robot, idx_other, thr_dis=6):
-        #             delta_theta -= math.pi / 5
-        #             break
-
-
-
-        if dis2workbench < 3 and robot.status == Robot.BLOCK_OTRHER:
-            print("forward", idx_robot, dis2workbench * 3)
-            self.robots[idx_robot].rotate(delta_theta * k_r)
-            # sys.stderr.write("干死他\n")
-            pass
-        else:
-            delta_theta = (delta_theta +
-                           math.pi) % (2 * math.pi) - math.pi
-            if sb_safe_dis:
-                # 保持安全车距等待买卖
-                print("forward", idx_robot, (d - self.WILL_CLASH_DIS-0.1) * 6)
-            # elif abs(delta_theta) > math.pi * 5 / 6 and dis_target < 2:
-            #     # 角度相差太大倒车走
-            #     print("forward", idx_robot, -2)
-            #     # delta_theta += math.pi
-            elif abs(delta_theta) > math.pi / 6:
-                # 角度相差较大 原地转向
-                print("forward", idx_robot, 0)
-            elif dis2workbench < 1.5:
-
-                print("forward", idx_robot, dis2workbench * 6)
-
-            else:
-                print("forward", idx_robot, (dis_target) * 10)
-
-            delta_theta = (delta_theta +
-                           math.pi) % (2 * math.pi) - math.pi
-
-            self.robots[idx_robot].rotate(delta_theta * k_r)
-
 
     def get_time_rate(self, frame_sell: float) -> float:
         # 计算时间损失
@@ -1597,177 +1301,16 @@ class Controller:
 
         self.rival_list = rival_list
 
-    def rivals_on_targets(self, idx_robot, thr_dis):
-        # 检测是否有对手在目标点
-        robot = self.robots[idx_robot]
-        idx_workbench = robot.target
-        target_loc = self.workbenchs[idx_workbench].loc if self.robots[idx_robot].status != Robot.BLOCK_OTRHER else self.rival_workbenchs[idx_workbench].loc
-        for rival in self.rival_list:
-            loc_rival, _ = rival
-            # if np. < thr_dis:
+
 
     def control(self, frame_id: int, money: int):
         self.process_long_deadlock(frame_id)
         self.detect_rival()
         print(frame_id)
-        sell_out_list = []  # 等待处理预售的机器人列表
-        idx_robot = 0
-        while idx_robot < 4:
+
+        for idx_robot in range(4):
             robot = self.robots[idx_robot]
-            robot_status = robot.status
-            if robot_status == Robot.FREE_STATUS:
-                # 判断是否出现了因跳帧导致的出售失败, 不太对, 预售预购的处理
-                # if robot.item_type != 0:
-                #     robot.status = Robot.MOVE_TO_SELL_STATUS
-                #     continue
-                # 【空闲】执行调度策略
-                if self.choise(frame_id, robot):
-                    # 设置机器人移动目标
-                    idx_workbench_to_buy = robot.get_buy()
-                    idx_workbench_to_sell = robot.get_sell()
-                    robot.target = idx_workbench_to_buy
-                    robot.set_path(self.m_map.get_float_path(
-                        robot.loc, idx_workbench_to_buy, self.blue_flag))
-                    # 预定工作台
-                    self.workbenchs[idx_workbench_to_buy].pro_buy()
-                    self.workbenchs[idx_workbench_to_sell].pro_sell(
-                        self.workbenchs[idx_workbench_to_buy].typeID)
-                    robot.status = Robot.MOVE_TO_BUY_STATUS
-                    robot.free_frames = 0
-                    continue
-                else:
-                    robot.free_frames += 1
-                    if robot.free_frames > self.MAX_FREE:
-                        pass
-                        # self.attack_one(robot)
-                    else:
-                        robot.forward(9)
-                        robot.rotate(4)
-
-            elif robot_status == Robot.MOVE_TO_BUY_STATUS:
-                # 【购买途中】
-                self.move(idx_robot)
-                # 判断距离是否够近
-
-                # 判定是否进入交互范围
-                if robot.workbench_ID == robot.target:
-                    # 记录任务分配时的时间 距离 角度相差
-                    robot.status = Robot.WAIT_TO_BUY_STATUS  # 切换为 【等待购买】
-                    continue
-            elif robot_status == Robot.WAIT_TO_BUY_STATUS:
-                # 【等待购买】
-                self.move(idx_robot)
-                idx_workbench_to_buy = robot.get_buy()
-                product_status = self.workbenchs[idx_workbench_to_buy].product_status
-                # self.pre_rotate(idx_robot, next_walkstand)
-                # 如果在等待，提前转向
-                if product_status == 1:  # 这里判定是否生产完成可以购买
-                    # 可以购买
-                    if robot.buy():  # 防止购买失败
-                        # 取消预售
-                        self.workbenchs[idx_workbench_to_buy].pro_buy(False)
-                        idx_workbench_to_sell = robot.get_sell()
-                        robot.target = idx_workbench_to_sell  # 更新目标到卖出地点
-                        if robot.block_model:
-                            robot.status = Robot.BLOCK_OTRHER  # 切换为崽人
-                        else:
-                            robot.status = Robot.MOVE_TO_SELL_STATUS  # 切换为 【出售途中】
-                        robot.set_path(self.m_map.get_float_path(
-                            robot.loc, idx_workbench_to_sell, self.blue_flag, True))
-                        continue
-                    else:
-                        robot.status = Robot.MOVE_TO_BUY_STATUS
-                        robot.set_path(self.m_map.get_float_path(
-                            robot.loc, robot.get_buy(), self.blue_flag))
-                        continue
-            elif robot_status == Robot.MOVE_TO_SELL_STATUS:
-                # 【出售途中】
-                # 判断是否出现了因跳帧导致的购买失败
-                # if robot.item_type == 0:
-                #     robot.status = Robot.MOVE_TO_BUY_STATUS
-                #     continue
-                # 移动
-                self.move(idx_robot)
-                # 判断距离是否够近
-
-                # 判定是否进入交互范围
-                if robot.workbench_ID == robot.target:
-                    robot.status = Robot.WAIT_TO_SELL_STATUS  # 切换为 【等待出售】
-                    # logging.debug(f"{idx_robot}->ready to sell")
-                    # 记录任务分配时的时间 距离 角度相差
-                    # 记录任务分配时的时间 距离 角度相差
-                    continue
-
-            elif robot_status == Robot.WAIT_TO_SELL_STATUS:
-                # 【等待出售】
-                self.move(idx_robot)
-                idx_workbench_to_sell = robot.get_sell()
-                workbench_sell = self.workbenchs[idx_workbench_to_sell]
-                # 如果在等待，提前转向
-                # raise Exception(F"{material},{material_type}")
-                # 这里判定是否生产完成可以出售 不是真的1
-                if not Workbench.WORKSTAND_OUT[workbench_sell.typeID] or not workbench_sell.check_material(
-                        robot.item_type):
-                    # 可以出售
-                    if robot.sell():  # 防止出售失败
-                        # 维护一下急需列表
-                        # 7且不等于0 说明有材料且没满
-                        if workbench_sell.typeID == 7 and workbench_sell.material != 0:
-                            # sys.stderr.write(f"material: {workbench_sell.material}\n")
-                            if workbench_sell.material in Workbench.WORKSTAND_STARVE:  # 就差一个了
-                                self.starve[robot.item_type] -= 1
-                            else:
-                                self.starve[Workbench.WORKSTAND_STARVE[workbench_sell.material + (
-                                    1 << robot.item_type)]] += 1
-                            # sys.stderr.write(f"material: {self.starve}\n")
-                        # 取消预定
-                        sell_out_list.append(idx_robot)
-                        robot.status = Robot.FREE_STATUS
-                        # 这个机器人不能再决策了, 不然目标更新，状态会被清错
-                        # continue
-                    else:
-                        robot.status = Robot.MOVE_TO_SELL_STATUS  # 购买失败说明位置不对，切换为 【出售途中】
-                        robot.set_path(self.m_map.get_float_path(
-                            robot.loc, idx_workbench_to_sell, self.blue_flag, True))
-                        continue
-            elif robot_status == Robot.AVOID_CLASH:
-                if robot.frame_backword > 0:
-                    robot.forward(-2)
-                    robot.frame_backword -= 1
-                else:
-                    self.set_robot_state_undeadlock(idx_robot, frame_id)
-                    avoid_idx, avoid_path = self.process_deadlock(
-                        idx_robot, robot.anoter_robot)
-                    robot.status = robot.last_status
-                    if avoid_idx == idx_robot:
-                        robot.set_path(avoid_path)
-                        robot.frame_wait = self.AVOID_FRAME_WAIT
-                    else:
-                        self.re_path(robot)
-            elif robot_status == Robot.BLOCK_OTRHER:
-                # 这里可以后续加点长时间没人的处理策略
-                self.move(idx_robot)
-
-            # 根据状态更新预估时间
-            self.tmp_avoid.clear()
-            robot.update_frame_reman()
-            # 严重超时, 重新规划, 对手里有东西的稍微宽容一点
-            if robot.get_frame_reman() < self.MAX_TIME_OUT * (1 if robot.item_type ==0 else 1.5) and robot.item_type!=7:
-                self.re_mession(robot)
-            idx_robot += 1
-        for idx_robot in sell_out_list:
-            robot = self.robots[idx_robot]
-            workbench_sell = self.workbenchs[robot.get_sell()]
-            workbench_sell.pro_sell(robot.item_type, False)
-        # 处理一下工作台
-        recorve_w_idx = [] # 记录可以恢复的工作台
-        for w_idx, frames in self.can_not_reach_workbenchs.items():
-            self.can_not_reach_workbenchs[w_idx]+=1
-            if frames >= self.MAX_CAN_NOT_REACH:
-                recorve_w_idx.append(w_idx)
-        # 取消不可达状态
-        for w_idx in recorve_w_idx:
-            self.can_not_reach_workbenchs.pop(w_idx)
-        # sys.stderr.write(f"can_not_reach_workbenchs:{self.can_not_reach_workbenchs}\n")
-
-
+            robot.status = Robot.BLOCK_OTRHER
+            robot.target = 2
+            self.re_path(robot)
+            self.move(idx_robot)
