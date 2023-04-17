@@ -57,9 +57,11 @@ class Controller:
     MAX_CAN_NOT_REACH = 2*50
 
 
-    def __init__(self, robots: List[Robot], workbenchs: List[Workbench], m_map: Workmap, blue_flag: bool):
+    def __init__(self, robots: List[Robot], workbenchs: List[Workbench], rival_workbenchs: List[Workbench], m_map: Workmap, blue_flag: bool):
         self.robots = robots
         self.workbenchs = workbenchs
+        # 敌方工作台
+        self.rival_workbenchs = rival_workbenchs
         self.m_map = m_map
         self.m_map_arr = np.array(m_map.map_gray)
         self.blue_flag = blue_flag
@@ -264,7 +266,7 @@ class Controller:
 
     def dis2target(self, idx_robot):
         idx_workbench = self.robots[idx_robot].target
-        w_loc = self.workbenchs[idx_workbench].loc if self.robots[idx_robot].status != Robot.BLOCK_OTRHER else self.other_workbenchs[idx_workbench]
+        w_loc = self.workbenchs[idx_workbench].loc if self.robots[idx_robot].status != Robot.BLOCK_OTRHER else self.rival_workbenchs[idx_workbench].loc
         r_loc = self.robots[idx_robot].loc
         return np.sqrt((r_loc[0] - w_loc[0]) ** 2 + (r_loc[1] - w_loc[1]) ** 2)
 
