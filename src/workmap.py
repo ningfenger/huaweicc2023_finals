@@ -433,7 +433,6 @@ class Workmap:
             for loc, (_, idx) in workbenchs_loc.items():
                 if loc in self.unreanchble_workbench:
                     continue
-                x, y = loc
                 if blue_flag:
                     self.buy_map_blue[idx] = copy.deepcopy(base_map)
                     self.sell_map_blue[idx] = copy.deepcopy(base_map)
