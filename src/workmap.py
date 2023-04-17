@@ -166,10 +166,14 @@ class Workmap:
                     x, y = tmp_blocks[0]
                     if x == 0 or y == 0:  # 必须是四个角上
                         continue
-                    flag1 = 0 <= j - 2 * y <= 99 and self.map_gray[i][j - 2 * y] != self.BLOCK and \
-                        self.map_gray[i + x][j - 2 * y] != self.BLOCK
-                    flag2 = 0 <= i + 2 * x <= 99 and self.map_gray[i + 2 * x][j] != self.BLOCK and \
-                        self.map_gray[i + 2*x][j + y] != self.BLOCK
+                    # flag1 = 0 <= j - 2 * y <= 99 and self.map_gray[i][j - 2 * y] != self.BLOCK and \
+                    #     self.map_gray[i + x][j - 2 * y] != self.BLOCK
+                    # flag2 = 0 <= i + 2 * x <= 99 and self.map_gray[i + 2 * x][j] != self.BLOCK and \
+                    #     self.map_gray[i + 2*x][j + y] != self.BLOCK
+                    flag1 = 0 <= j - 2 * x <= 99 and self.map_gray[j - 2 * x][i] != self.BLOCK and \
+                        self.map_gray[j - 2 * x][i + y] != self.BLOCK
+                    flag2 = 0 <= i - 2 * x <= 99 and self.map_gray[i - 2 * x][j] != self.BLOCK and \
+                        self.map_gray[i - 2 * x][j + y] != self.BLOCK
                     if flag1 and flag2:
                         self.map_gray[i][j] = self.BROAD_ROAD
                         # 要根据具体情况加偏移量
@@ -327,6 +331,7 @@ class Workmap:
             dq = [workbench_loc]
             while dq:
                 i, j = dq.pop()
+                flag1 = (i, j) in self.broad_shifting
                 for x, y in self.TURNS:
                     n_x, n_y = i + x, j + y
                     # 因为是卖的过程，必须是宽路
@@ -336,6 +341,11 @@ class Workmap:
                         visited_workbench.append(
                             workbenchs_loc[(n_x, n_y)])  # 将这个工作台添加到列表
                     visited_loc[n_x][n_y] = True
+                    if flag1 and x!=0 and y!=0 and (n_x,n_y) in self.broad_shifting:
+                        if self.map_gray[i-x][j+y]==self.BLOCK and (i+2*x<0 or i+2*x>99 or  self.map_gray[i+2*x][j]==self.BLOCK):
+                            continue
+                        if self.map_gray[i+x][j-y]==self.BLOCK and (j+2*y<0 or j+2*y>99 or  self.map_gray[i][j+2*y]==self.BLOCK):
+                            continue
                     if self.map_gray[n_x][n_y] >= self.BROAD_ROAD:
                         dq.append((n_x, n_y))
             for wb_type, wb_ID in visited_workbench:
@@ -381,12 +391,18 @@ class Workmap:
         while reach:
             tmp_reach = {}  # 暂存新一轮可到达点, k可到达点坐标, v 角度差
             for node_x, node_y in reach:
+                flag1 = (node_x, node_y) in self.broad_shifting
                 last_x, last_y = target_map[node_x][node_y]
                 for i, j in self.TURNS:
                     next_x, next_y = node_x + i, node_y + j
                     if next_x < 0 or next_y < 0 or next_x >= 100 or next_y >= 100 or self.map_gray[next_x][
                             next_y] < low_value:
                         continue
+                    if broad_road and flag1 and i != 0 and j != 0 and (next_x, next_y) in self.broad_shifting:
+                        if self.map_gray[node_x-i][node_y+j] == self.BLOCK and (node_x+2*i < 0 or node_x+2*i > 99 or self.map_gray[node_x+2*i][node_y] == self.BLOCK):
+                            continue
+                        elif self.map_gray[node_x+i][node_y-j] == self.BLOCK and (node_y+2*j < 0 or node_y+2*j > 99 or self.map_gray[node_x][node_y+x*j] == self.BLOCK):
+                            continue
                     if (next_x, next_y) not in tmp_reach:
                         if target_map[next_x][next_y]:  # 已被访问过说明是已经添加到树中的节点
                             continue
