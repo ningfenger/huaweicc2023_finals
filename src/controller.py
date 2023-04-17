@@ -75,7 +75,7 @@ class Controller:
         self.attacked = set()  # 记录已被攻击的工作台
         self.no_use_attack = set()  # 记录无需被攻击的工作台 ？
         self.can_not_reach_workbenchs = {} # 记录无法到达的工作台即持续帧数
-
+        self.rival_list = []
     def set_control_parameters(self, move_speed: float, max_wait: int, sell_weight: float, sell_debuff: float):
         '''
         设置参数， 建议取值范围:
@@ -264,7 +264,7 @@ class Controller:
 
     def dis2target(self, idx_robot):
         idx_workbench = self.robots[idx_robot].target
-        w_loc = self.workbenchs[idx_workbench].loc
+        w_loc = self.workbenchs[idx_workbench].loc if self.robots[idx_robot].status != Robot.BLOCK_OTRHER else self.other_workbenchs[idx_workbench]
         r_loc = self.robots[idx_robot].loc
         return np.sqrt((r_loc[0] - w_loc[0]) ** 2 + (r_loc[1] - w_loc[1]) ** 2)
 
@@ -718,69 +718,6 @@ class Controller:
                 return False
         return True
 
-    def select_target_after_radar(self, idx_robot):
-        def finf_near_theta(radar_theta, target_theta):
-            err = np.absolute(target_theta - radar_theta)
-            index = np.where(err < 1.1 / 180 * math.pi)[0]
-            return index
-
-
-
-
-        robot = self.robots[idx_robot]
-        robot_loc_m = np.array(robot.loc).copy()
-        path_loc_m = robot.path.copy()
-
-        vec_r2p = robot_loc_m - path_loc_m
-        dis_r2p = np.sqrt(np.sum(vec_r2p ** 2, axis=1))
-        mask_greater = dis_r2p < 40
-        mask_smaller = 0.3 < dis_r2p
-        mask = mask_greater & mask_smaller
-        path_loc_m = path_loc_m[mask]
-        if self.robots[idx_robot].item_type == 0:
-            carry_flag = False
-        else:
-            carry_flag = True
-
-        # 激光雷达的角度
-        theta_radar = np.arange(0, 2*math.pi, math.pi / 180) + robot.toward
-
-
-
-        # robot_loc_m 指向各个点的方向
-        theta_set = np.arctan2(
-            path_loc_m[:, 1] - robot_loc_m[1], path_loc_m[:, 0] - robot_loc_m[0]).reshape(-1, 1)
-
-        len_path = path_loc_m.shape[0]
-        detect_m = np.full(len_path, False)
-
-        for idx_point in range(len_path):
-            dis_point = dis_r2p[idx_point]
-            theta_point = theta_set[idx_point]
-            idx_set_temp = finf_near_theta(theta_radar, theta_point)
-            dis_obt_set_temp = robot.radar_info[idx_set_temp]
-            mask_judge = dis_obt_set_temp > dis_point
-            if mask_judge.all() and len(mask_judge) > 0:
-                detect_m[idx_point] = True
-
-        if detect_m.any():
-            m_index = np.where(detect_m)[0]
-            idx_target = m_index[len(m_index) - 1]
-            target_point = path_loc_m[idx_target, :]
-            idx_point = np.where(mask)[0][idx_target]
-        # elif detect_2.any():
-        #     m_index = np.where(detect_2)[0]
-        #     idx_target = m_index[len(m_index) - 1]
-        #     target_point = path_loc_m[idx_target, :]
-        #     idx_point = np.where(mask)[0][idx_target]
-        else:
-            idx_target = robot.find_temp_tar_idx()
-            target_point = robot.path[idx_target, :]
-            idx_point = idx_target
-        # ,
-
-        return target_point, idx_point
-
     def select_target(self, idx_robot):
         # 雷达前的版本
         robot = self.robots[idx_robot]
@@ -951,186 +888,162 @@ class Controller:
                 count += 1
         return count
 
-    def move_after_radar(self, idx_robot):
-        robot = self.robots[idx_robot]
-        k_r = 1
+    def rival_filter(self, radar_x, radar_y, rival_list):
+        # 已扫描到的敌方机器人
+        num_rival = len(rival_list)
 
-        flag_obt_near = self.obt_near(robot)
+        # 可优化 我不知道怎么直接生成全true
+        mask_filter = radar_x > -1
+        if num_rival > 0:
+            for idx in range(num_rival):
+                # 敌方机器人坐标
+                loc_filter = rival_list[idx][0]  # [[(x, y), r], [(x, y), r]]
+                r_filter = rival_list[idx][1]
 
-        # 到工作台距离 用于判定是否接近道路终点
-        dis2workbench = self.dis2target(idx_robot)
+                # 相对于敌方机器人的xy
+                radar_rel_x = radar_x - loc_filter[0]
+                radar_rel_y = radar_y - loc_filter[1]
 
-        # 判定是否有临时目标点
-        if self.robots[idx_robot].temp_target is None:
-            # 没有临时目标点则重新规划
-            self.re_path(robot)
-            if flag_obt_near:
-                target_loc, target_idx = self.select_target(idx_robot)
+                # 相对于敌方机器人的距离
+                dis_rel = np.sqrt(radar_rel_x ** 2 + radar_rel_y ** 2)
+
+                # 距离已知敌方机器人远的才是潜在的敌方机器人
+                mask_filter_temp = dis_rel > r_filter + 0.001
+
+                # 按位与更新
+                mask_filter = mask_filter & mask_filter_temp
+
+        return mask_filter
+
+    def our_filter(self, radar_x, radar_y):
+        # 排除扫描到己方机器人的情况
+
+        # 可优化 我不知道怎么直接生成全true
+        mask_filter = radar_x > -1
+
+        for robot_filter in self.robots:
+            # 己方机器人坐标
+            loc_filter = robot_filter.loc
+
+            # 己方机器人半径
+            if robot_filter.item_type == 0:
+                r_filter = 0.53
             else:
-                target_idx = robot.find_temp_tar_idx()
-                target_loc = robot.path[target_idx, :]
-            robot.temp_target = target_loc
-        else:
-            # 有临时目标点
-            dis_temp_target = np.sqrt(
-                np.sum((robot.temp_target - np.array(robot.loc)) ** 2))
-            if (robot.frame_wait > 0 and dis_temp_target > 0.35) or (robot.frame_wait == 0 and dis_temp_target > 2):
-                # 距离大于给定值时 继续追踪
-                target_loc = robot.temp_target
-            else:
-                self.re_path(robot)
-                # 足够接近时 重新选择
-                if flag_obt_near:
-                    target_loc, target_idx = self.select_target(idx_robot)
+                r_filter = 0.45
+
+            # 相对于己方机器人的xy
+            radar_rel_x = radar_x - loc_filter[0]
+            radar_rel_y = radar_y - loc_filter[1]
+
+            # 相对于己方机器人的距离
+            dis_rel = np.sqrt(radar_rel_x ** 2 + radar_rel_y ** 2)
+
+            # 距离己方机器人远的才是潜在的敌方机器人
+            mask_filter_temp = dis_rel > r_filter + 0.001
+
+            # 按位与更新
+            mask_filter = mask_filter & mask_filter_temp
+
+        return mask_filter
+
+    def detect_rival_item(self, robot, thr_dis, rival_list):
+        loc_this = robot.loc
+        radar_x = robot.radar_info_x
+        radar_y = robot.radar_info_y
+
+        # mask为true表示为潜在的机器人 通过已知障碍物排除
+        mask = tools.is_multiple_of_half(radar_y) & tools.is_multiple_of_half(radar_x)
+
+        # 相对于当前机器人的xy
+        radar_rel_x = radar_x - loc_this[0]
+        radar_rel_y = radar_y - loc_this[1]
+
+        # 相对于当前机器人的距离
+        dis_rel = np.sqrt(radar_rel_x ** 2 + radar_rel_y ** 2)
+
+        # 通过相对于当前机器人距离排除 越远探测效果越差
+        mask_dis = dis_rel < thr_dis
+
+        # 从己方坐标排除
+        mask_our = self.our_filter(radar_x, radar_y)
+
+
+        for _ in range(4):
+            # 敌方最多4个机器人
+
+            # 从对方坐标排除
+            mask_rival = self.rival_filter(radar_x, radar_y, rival_list)
+
+            # 更新
+            mask = mask & mask_dis & mask_our & mask_rival
+
+            if sum(mask) > 0:
+                # 存在有效过滤数据
+
+                # 建立布尔表与原索引的映射
+                index_map = [i for i, m in enumerate(mask) if m]
+
+                # 取出经过过滤后的雷达数据
+                radar_x_filter = radar_x[mask]
+                radar_y_filter = radar_y[mask]
+
+                # 找出过滤后最近点
+                radar_x_l2r = radar_x_filter - loc_this[0]
+                radar_y_l2r = radar_y_filter - loc_this[1]
+                dis_l2r = np.sqrt(radar_x_l2r ** 2 + radar_y_l2r ** 2)
+
+                # 取出距离最近的索引（不易与其他机器人误判）
+                try:
+                    idx_min = np.argmin(dis_l2r)
+                except:
+                    raise Exception(dis_l2r)
+
+                # 还原到过滤前的索引
+                idx_ori = index_map[idx_min]
+                if idx_ori == 1:
+                    idx_set = [359, 0, 1, 2, 3]
+                elif idx_ori == 0:
+                    # 边界值
+                    idx_set = [358, 359, 0, 1, 2]
+                elif idx_ori == 359:
+                    # 边界值
+                    idx_set = [357, 358, 359, 0, 1]
+                elif idx_ori == 358:
+                    # 边界值
+                    idx_set = [356, 357, 358, 359, 0]
                 else:
-                    target_idx = robot.find_temp_tar_idx()
-                    target_loc = robot.path[target_idx, :]
-                robot.temp_target = target_loc
-        # 因为移动过程中可能导致阻塞而避让, 可以解除顶牛, 可能导致HUQ
-        col_flag = False
-        # 因为买卖而产生的避让
-        sb_flag = False
-        # 是否要采取保持距离的方式
-        sb_safe_dis = False
-        d = 100
-        # 要避让的机器人序号
-        idx_huq = -1
-        for idx_other in range(4):
-            if not idx_other == idx_robot:
-                d = min(self.get_other_col_info2(
-                    idx_robot, idx_other), d)
-                if d < self.WILL_CLASH_DIS:
-                    col_flag = True
-                    idx_huq = idx_other
-                    break
-        robot_target = robot.target
-        # 初始化一个较大值
-        other_dis2workbench = self.WILL_HUQ_DIS
-        # if robot.temp_target[0] == self.workbenchs[robot_target].loc[0] and robot.temp_target[1] == self.workbenchs[robot_target].loc[1]:
-        #     import debug
-        #     debug.save_controller(self)
-        #     raise Exception(idx_robot)
-        if dis2workbench < self.WILL_HUQ_DIS and not col_flag and robot.status in [Robot.MOVE_TO_BUY_STATUS,
-                                                                                   Robot.WAIT_TO_BUY_STATUS]:
-            for idx_other in range(4):
-                # 锐总说这不合适吧
-                if (not idx_other == idx_robot) and self.robots[idx_other].frame_wait == 0 and robot_target == \
-                        self.robots[idx_other].target:
-                    # 另一个机器人到工作台的距离
-                    other_dis2workbench = self.dis2target(idx_other)
-                    status_other = self.robots[idx_other].status
-                    if other_dis2workbench > self.WILL_HUQ_DIS:
-                        continue
-                    # 买的让卖的
-                    if status_other in [Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS]:
-                        sb_flag = True
-                    # 同买, 近的让远的
-                    elif status_other in [Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS]:
-                        if dis2workbench > other_dis2workbench:
-                            sb_flag = True
-                        elif dis2workbench == other_dis2workbench and idx_robot > idx_other:
-                            sb_flag = True
-                    if sb_flag:
-                        idx_huq = idx_other
-                        break
-        if sb_flag and dis2workbench > other_dis2workbench:
-            sb_safe_dis = True
+                    # 其他值
+                    idx_set = [idx_ori - 2, idx_ori - 1, idx_ori, idx_ori + 1, idx_ori + 2]
 
-        if col_flag or (sb_flag and not sb_safe_dis):
-            priority_idx = -1
-            if col_flag:
-                status_huq = self.robots[idx_huq].status
-                huq_dis2workbench = self.dis2target(idx_huq)
-                if robot_target == self.robots[idx_huq].target:
-                    # 我买对方卖
-                    if robot.status in [Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS] and status_huq in [
-                        Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS]:
-                        priority_idx = idx_robot
-                    # 我卖对方买
-                    elif robot.status in [Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS] and status_huq in [
-                        Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS]:
-                        priority_idx = idx_huq
-                    # 同买同卖
-                    else:
-                        if dis2workbench > huq_dis2workbench:
-                            priority_idx = idx_robot
-                        elif dis2workbench < huq_dis2workbench:
-                            priority_idx = idx_huq
-            else:
-                priority_idx = idx_robot
-            self.re_path(robot)
-            self.re_path(self.robots[idx_huq])
-            avoid_idx, avoid_path = self.process_deadlock(
-                idx_robot, idx_huq, priority_idx)
-            # sys.stderr.write(f"avoid_idx: {avoid_idx}\n")
-            if avoid_idx == -1:
-                # sys.stderr.write(
-                #     f"REVERSE idx_robot: {idx_robot}\n")
-                # 如果出现可能有坑 一个机器人堵了两个机器人
-                sb_safe_dis = True
-                pass
-            elif avoid_idx == idx_robot:
-                # sys.stderr.write(f"idx_robot{idx_robot}, robot.item{robot.item_type}, avoid_path{avoid_path}\n")
-                self.robots[idx_robot].set_path(avoid_path)
-                self.robots[idx_robot].frame_wait = self.AVOID_FRAME_WAIT
-                # sys.stderr.write(f"idx_robot: {idx_robot}\n")
-                flag_obt_near = self.obt_near(robot)
-                if flag_obt_near:
-                    target_loc, target_idx = self.select_target(
-                        idx_robot)
-                else:
-                    target_idx = robot.find_temp_tar_idx()
-                    target_loc = robot.path[target_idx, :]
-                robot.temp_target = target_loc
+                # 从360个点中选取5个点（增强鲁棒性）
+                mask_try = mask[idx_set]
 
-        # 根据给定目标点修正
-        target_vec = [target_loc[0] - robot.loc[0],
-                      target_loc[1] - robot.loc[1]]
-        dis_target = np.sqrt(np.dot(target_vec, target_vec))
-
-        target_theta = np.arctan2(
-            target_vec[1], target_vec[0])
-
-        robot_theta = self.robots[idx_robot].toward
-        delta_theta = target_theta - robot_theta
-
-        # 不确定用处大不大，暂时保留
-        # for idx_other in range(4):
-        #     if not idx_other == idx_robot:
-        #         if self.direct_colli(idx_robot, idx_other, thr_dis=6):
-        #             delta_theta -= math.pi / 5
-        #             break
-        delta_theta = (delta_theta +
-                       math.pi) % (2 * math.pi) - math.pi
-        if sb_safe_dis and 0:
-            # 保持安全车距等待买卖
-            print("forward", idx_robot, (d - self.WILL_CLASH_DIS - 0.1) * 6)
-        # elif abs(delta_theta) > math.pi * 5 / 6 and dis_target < 2:
-        #     # 角度相差太大倒车走
-        #     print("forward", idx_robot, -2)
-            # delta_theta += math.pi
-        elif abs(delta_theta) > math.pi / 6:
-            # 角度相差较大 原地转向
-            print("forward", idx_robot, 0)
-        elif dis2workbench < 1.5:
-
-            print("forward", idx_robot, dis2workbench * 6)
-
-        else:
-            print("forward", idx_robot, (dis_target) * 10)
-
-        delta_theta = (delta_theta +
-                       math.pi) % (2 * math.pi) - math.pi
-
-        self.robots[idx_robot].rotate(delta_theta * k_r)
-
-
+                # 从5个点中选取3个点（圆心定位只能3个点）
+                if len(mask_try) > 0 and sum(mask_try) >= 3:
+                    true_indices = []
+                    count = 0
+                    for index in idx_set:
+                        if mask[index]:
+                            true_indices.append(index)
+                            count += 1
+                            # 如果已经找到了3个True，则退出循环
+                            if count == 3:
+                                break
+                    # 取出前三个，定位算法只能取三个点。
+                    idx_set = true_indices
+                    if count == 3:
+                        # 最近点的邻近3点都符合
+                        x_circle = radar_x[idx_set]
+                        y_circle = radar_y[idx_set]
+                        x0, y0, r = tools.calculate_circle(x_circle, y_circle)
+                        # time.sleep(1)
+                        if r < 0.543:
+                            rival_list.append([(x0, y0), r])
 
     def move(self, idx_robot):
     # 360雷达前的版本
         robot = self.robots[idx_robot]
         k_r = 8
-
         flag_obt_near = self.obt_near(robot)
 
         # 到工作台距离 用于判定是否接近道路终点
@@ -1274,29 +1187,37 @@ class Controller:
         #             delta_theta -= math.pi / 5
         #             break
 
-        delta_theta = (delta_theta +
-                       math.pi) % (2 * math.pi) - math.pi
-        if sb_safe_dis:
-            # 保持安全车距等待买卖
-            print("forward", idx_robot, (d - self.WILL_CLASH_DIS-0.1) * 6)
-        # elif abs(delta_theta) > math.pi * 5 / 6 and dis_target < 2:
-        #     # 角度相差太大倒车走
-        #     print("forward", idx_robot, -2)
-        #     # delta_theta += math.pi
-        elif abs(delta_theta) > math.pi / 6:
-            # 角度相差较大 原地转向
-            print("forward", idx_robot, 0)
-        elif dis2workbench < 1.5:
 
-            print("forward", idx_robot, dis2workbench * 6)
 
+        if dis2workbench < 3 and robot.status == Robot.BLOCK_OTRHER:
+            print("forward", idx_robot, dis2workbench * 3)
+            self.robots[idx_robot].rotate(delta_theta * k_r)
+            # sys.stderr.write("干死他\n")
+            pass
         else:
-            print("forward", idx_robot, (dis_target) * 10)
+            delta_theta = (delta_theta +
+                           math.pi) % (2 * math.pi) - math.pi
+            if sb_safe_dis:
+                # 保持安全车距等待买卖
+                print("forward", idx_robot, (d - self.WILL_CLASH_DIS-0.1) * 6)
+            # elif abs(delta_theta) > math.pi * 5 / 6 and dis_target < 2:
+            #     # 角度相差太大倒车走
+            #     print("forward", idx_robot, -2)
+            #     # delta_theta += math.pi
+            elif abs(delta_theta) > math.pi / 6:
+                # 角度相差较大 原地转向
+                print("forward", idx_robot, 0)
+            elif dis2workbench < 1.5:
 
-        delta_theta = (delta_theta +
-                       math.pi) % (2 * math.pi) - math.pi
+                print("forward", idx_robot, dis2workbench * 6)
 
-        self.robots[idx_robot].rotate(delta_theta * k_r)
+            else:
+                print("forward", idx_robot, (dis_target) * 10)
+
+            delta_theta = (delta_theta +
+                           math.pi) % (2 * math.pi) - math.pi
+
+            self.robots[idx_robot].rotate(delta_theta * k_r)
 
     def get_time_rate(self, frame_sell: float) -> float:
         # 计算时间损失
@@ -1476,8 +1397,21 @@ class Controller:
             # else:
             #     robot2.frame_wait = random.randint(3, 5) * 30
 
+    def detect_rival(self):
+        # 对手机器人坐标 半径
+        rival_list = []
+
+        # 遍历己方机器人
+        for robot in self.robots:
+            self.detect_rival_item(robot, 20, rival_list)
+
+        self.rival_list = rival_list
+
+
+
     def control(self, frame_id: int, money: int):
         self.process_long_deadlock(frame_id)
+        self.detect_rival()
         print(frame_id)
         sell_out_list = []  # 等待处理预售的机器人列表
         idx_robot = 0
