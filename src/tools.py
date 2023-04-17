@@ -139,11 +139,17 @@ def calculate_circle(x_circle, y_circle):
     # 计算相应垂线的斜率
     if k1 is None:
         k3 = 0
+    elif abs(k1) < 1e-6:
+        # 斜率正无穷, 实际可能不会出现，一旦出现会0分，不要用C++的inf，就用超大值
+        k3 = 1e10
     else:
         k3 = -1 / k1
 
     if k2 is None:
         k4 = 0
+    elif abs(k2) < 1e-6:
+        # 斜率正无穷, 实际可能不会出现，一旦出现会0分，不要用C++的inf，就用超大值
+        k4 = 1e10
     else:
         k4 = -1 / k2
 

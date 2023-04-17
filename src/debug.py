@@ -63,11 +63,12 @@ def show(idx_robot, map:workmap.Workmap, controller:Controller):
 
     plt.plot(target_select[0], target_select[1], 'g*')
     plt.show()
+    a=1111111111111
     pass
 
 
 def show2(map:workmap.Workmap, controller:Controller):
-    fig = plt.figure(figsize=(20, 16))
+    fig = plt.figure(figsize=(50, 40))
     plt.imshow(map.map_gray[::-1], origin='lower', extent=[0, 50, 0, 50])
     for robot in controller.robots:
         # robot = controller.robots[idx_robot]
@@ -95,6 +96,12 @@ def show2(map:workmap.Workmap, controller:Controller):
     pass
 
 if __name__ == '__main__':
+    x = [-2, 2, 2]
+    y = [-2, -2, 2]
+    x0, y0, r = tools.calculate_circle(x, y)
+
+
+
     idx_robot = 0
     import matplotlib.pyplot as plt
     map = workmap.Workmap(debug=True)

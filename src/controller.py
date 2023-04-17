@@ -1239,26 +1239,45 @@ class Controller:
 
                 # 还原到过滤前的索引
                 idx_ori = index_map[idx_min]
-                if idx_ori == 0:
+                if idx_ori == 1:
+                    idx_set = [359, 0, 1, 2, 3]
+                elif idx_ori == 0:
                     # 边界值
-                    idx_set = [359, 0, 1]
+                    idx_set = [358, 359, 0, 1, 2]
                 elif idx_ori == 359:
                     # 边界值
-                    idx_set = [358, 359, 0]
+                    idx_set = [357, 358, 359, 0, 1]
+                elif idx_ori == 358:
+                    # 边界值
+                    idx_set = [356, 357, 358, 359, 0]
                 else:
                     # 其他值
-                    idx_set = [idx_ori - 1, idx_ori, idx_ori + 1]
+                    idx_set = [idx_ori - 2, idx_ori - 1, idx_ori, idx_ori + 1, idx_ori + 2]
 
+                # 从360个点中选取5个点（增强鲁棒性）
                 mask_try = mask[idx_set]
 
-                if len(mask_try) > 0 and mask_try.all():
-                    # 最近点的邻近3点都符合
-                    x_circle = radar_x[idx_set]
-                    y_circle = radar_y[idx_set]
-                    x0, y0, r = tools.calculate_circle(x_circle, y_circle)
-                    # time.sleep(1)
-                    if r < 0.54:
-                        rival_list.append([(x0, y0), r])
+                # 从5个点中选取3个点（圆心定位只能3个点）
+                if len(mask_try) > 0 and sum(mask_try) >= 3:
+                    true_indices = []
+                    count = 0
+                    for index in idx_set:
+                        if mask[index]:
+                            true_indices.append(index)
+                            count += 1
+                            # 如果已经找到了3个True，则退出循环
+                            if count == 3:
+                                break
+                    # 取出前三个，定位算法只能取三个点。
+                    idx_set = true_indices
+                    if count == 3:
+                        # 最近点的邻近3点都符合
+                        x_circle = radar_x[idx_set]
+                        y_circle = radar_y[idx_set]
+                        x0, y0, r = tools.calculate_circle(x_circle, y_circle)
+                        # time.sleep(1)
+                        if r < 0.54:
+                            rival_list.append([(x0, y0), r])
 
 
 
