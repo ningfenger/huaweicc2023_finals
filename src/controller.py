@@ -22,7 +22,7 @@ class Controller:
     # 总帧数
     TOTAL_FRAME = 50 * 60 * 4
     # 控制参数
-    MOVE_SPEED_MUL = 4.65
+    MOVE_SPEED_MUL = 4.1
     MOVE_SPEED = 50 * 0.5 / MOVE_SPEED_MUL  # 因为每个格子0.5, 所以直接用格子数乘以它就好了
     MAX_WAIT_MUL = 1.5
     MAX_WAIT = MAX_WAIT_MUL * 50  # 最大等待时间
@@ -78,6 +78,10 @@ class Controller:
         self.no_use_attack = set()  # 记录无需被攻击的工作台 ？
         self.can_not_reach_workbenchs = {} # 记录无法到达的工作台即持续帧数
         self.rival_list = []
+        # 开始派多少机器人去捣乱
+        self.max_block_robots = 1 if self.blue_flag else 1
+        # 记录工作台被拉黑了多少次
+        self.black_workbenchs = {}
     def set_control_parameters(self, move_speed: float, max_wait: int, sell_weight: float, sell_debuff: float):
         '''
         设置参数， 建议取值范围:
@@ -166,47 +170,19 @@ class Controller:
         按照优先级选择进攻目标
         为了防止极端情况下直接报错退出, 建议调用此函数时直接try一下, 如果报错放弃崽人
         '''
-        value_robots: List[Robot] = []  # 能创造价值的机器人
+        # 说明是地图4并且我方是红方
+        if not self.other_workbenchs:
+            return
         zz_robots: List[Robot] = []  # 无事可做机器人
         for robot in self.robots:
             for w_idx_buy in robot.target_workbench_list:
                 # 可以完成一次完整的买卖, 能赚钱的机器人
                 if self.workbenchs[w_idx_buy].target_workbench_list:
-                    value_robots.append(robot)
                     break
             else:
                 zz_robots.append(robot)
-        for w_type in self.other_workbenchs_order:
-            can_not_attack_all = False  # 能不能控制全部此类工作台
-            for workbench_block in self.other_workbenchs[w_type]:
-                # 优先派无事可做的机器人
-                for robot in zz_robots:
-                    # 已经有任务
-                    if robot.block_model:
-                        continue
-                    if self.get_attack_path(robot, workbench_block):
-                        robot.block_model = True
-                        break
-                else:
-                    for robot in value_robots:
-                        if robot.block_model:
-                            continue
-                        if self.get_attack_path(robot, workbench_block):
-                            robot.block_model = True
-                            break
-                    else:
-                        can_not_attack_all = True
-                if can_not_attack_all:  # 如果不能全部控制则不做
-                    for robot in self.robots:
-                        robot.block_model = False
-            # 如果不能全堵则不赌， 且不能让全部可以挣钱的机器人都去堵
-            if can_not_attack_all or all([robot.block_model for robot in value_robots]):
-                for robot in self.robots:
-                    robot.block_model = False
-                continue
-            else:
-                break
-        else:  # 说明不可以全堵, 让不能干活的机器人赌一赌
+        # 说明是地图2或者地图4, 全部进攻即可
+        if zz_robots:
             for w_type in self.other_workbenchs_order:
                 for workbench_block in self.other_workbenchs[w_type]:
                     for robot in zz_robots:
@@ -218,6 +194,20 @@ class Controller:
                             break
                     if all([robot.block_model for robot in zz_robots]):
                         break
+        else:
+            attack_num = 0
+            for w_type in self.other_workbenchs_order:
+                for workbench_block in self.other_workbenchs[w_type]:
+                    for robot in self.robots:
+                        if robot.block_model:
+                            continue
+                        if self.get_attack_path(robot, workbench_block):
+                            robot.block_model = True
+                            attack_num += 1
+                            break
+                if attack_num == self.max_block_robots:
+                    break 
+                
         # 最后集中处理一下机器人状态:
         for robot in self.robots:
             if robot.block_model:
@@ -284,7 +274,9 @@ class Controller:
         # 手中持有物品
         if robot.item_type > 0:
             item_type = robot.item_type
-            self.can_not_reach_workbenchs[sell_idx] = 0
+            # sys.stderr.write(f'item_type:{item_type}\n')
+            self.can_not_reach_workbenchs[sell_idx] = self.MAX_CAN_NOT_REACH*(1<<self.black_workbenchs.get(sell_idx,0))
+            self.black_workbenchs[sell_idx] = self.black_workbenchs.get(sell_idx,0)+1
             # 尝试找个地方卖了
             min_sell_frame = None
             for idx_workbench_to_sell in self.workbenchs[robot.get_buy()].target_workbench_list:
@@ -300,6 +292,7 @@ class Controller:
                                                              True)) * self.MOVE_SPEED
                 if not min_sell_frame or min_sell_frame > frame_move_to_sell:
                     min_sell_frame = frame_move_to_sell
+                    sys.stderr.write(f'last_sell:{sell_idx} new_sell:{idx_workbench_to_sell}\n')
                     robot.set_plan(robot.get_buy(), idx_workbench_to_sell)
                     robot.frame_reman_sell = frame_move_to_sell
             if min_sell_frame:
@@ -315,7 +308,8 @@ class Controller:
                 robot.destroy()
         else:
             # 设置工作台不可达状态
-            self.can_not_reach_workbenchs[buy_idx] = 0
+            self.can_not_reach_workbenchs[buy_idx] = self.MAX_CAN_NOT_REACH*(1<<self.black_workbenchs.get(buy_idx,0))
+            self.black_workbenchs[buy_idx] = self.black_workbenchs.get(buy_idx,0)+1
         # 重置为空闲状态
         robot.status = Robot.FREE_STATUS
 
@@ -1191,7 +1185,7 @@ class Controller:
 
 
 
-        if dis2workbench < 3 and robot.status == Robot.BLOCK_OTRHER:
+        if dis2workbench < 3 and robot.status == Robot.BLOCK_OTRHER and 0:
             print("forward", idx_robot, dis2workbench * 3)
             self.robots[idx_robot].rotate(delta_theta * k_r)
             # sys.stderr.write("干死他\n")
@@ -1567,8 +1561,8 @@ class Controller:
         # 处理一下工作台
         recorve_w_idx = [] # 记录可以恢复的工作台
         for w_idx, frames in self.can_not_reach_workbenchs.items():
-            self.can_not_reach_workbenchs[w_idx]+=1
-            if frames >= self.MAX_CAN_NOT_REACH:
+            self.can_not_reach_workbenchs[w_idx]-=1
+            if frames <= 0:
                 recorve_w_idx.append(w_idx)
         # 取消不可达状态
         for w_idx in recorve_w_idx:
