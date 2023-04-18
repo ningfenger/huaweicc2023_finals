@@ -341,10 +341,10 @@ class Workmap:
                         visited_workbench.append(
                             workbenchs_loc[(n_x, n_y)])  # 将这个工作台添加到列表
                     visited_loc[n_x][n_y] = True
-                    if flag1 and x!=0 and y!=0 and (n_x,n_y) in self.broad_shifting:
-                        if self.map_gray[i-x][j+y]==self.BLOCK and (i+2*x<0 or i+2*x>99 or  self.map_gray[i+2*x][j]==self.BLOCK):
+                    if flag1 and x != 0 and y != 0 and (n_x, n_y) in self.broad_shifting:
+                        if self.map_gray[i-x][j+y] == self.BLOCK and (i+2*x < 0 or i+2*x > 99 or self.map_gray[i+2*x][j] == self.BLOCK):
                             continue
-                        if self.map_gray[i+x][j-y]==self.BLOCK and (j+2*y<0 or j+2*y>99 or  self.map_gray[i][j+2*y]==self.BLOCK):
+                        if self.map_gray[i+x][j-y] == self.BLOCK and (j+2*y < 0 or j+2*y > 99 or self.map_gray[i][j+2*y] == self.BLOCK):
                             continue
                     if self.map_gray[n_x][n_y] >= self.BROAD_ROAD:
                         dq.append((n_x, n_y))
@@ -398,6 +398,8 @@ class Workmap:
                     if next_x < 0 or next_y < 0 or next_x >= 100 or next_y >= 100 or self.map_gray[next_x][
                             next_y] < low_value:
                         continue
+
+                    # 防止在特殊宽路处卡死
                     if broad_road and flag1 and i != 0 and j != 0 and (next_x, next_y) in self.broad_shifting:
                         if self.map_gray[node_x-i][node_y+j] == self.BLOCK and (node_x+2*i < 0 or node_x+2*i > 99 or self.map_gray[node_x+2*i][node_y] == self.BLOCK):
                             continue
@@ -530,6 +532,9 @@ class Workmap:
         else:  # 如果不指定走宽路，则优先走宽路
             path = self.get_better_path(float_loc, workbench_ID, blue)
         if not path:
+            loc = self.loc_float2int(*float_loc)
+            # de的时候再看一下 目标工作台ID和阵营。。。
+            # sys.stderr.write(f'loc: {loc} broad {self.map_gray[loc[0]][loc[1]]}\n')
             return path
         for i in range(len(path) - 1):
             x, y = path[i]
@@ -574,7 +579,14 @@ class Workmap:
             target_map = buy_map[workbench_ID]
         node_x, node_y = self.loc_float2int(*float_loc)
         if not target_map[node_x][node_y]:
+            # 按照距离排序, 优先选择距离最近的点重新规划
+            dis = {}
             for x, y in self.TURNS:
+                float_x, float_y = self.loc_int2float_normal(
+                    node_x + x, node_y + y)
+                dis[(x, y)] = (float_loc[0]-float_x)**2 + \
+                    (float_loc[1]-float_y)**2
+            for x, y in sorted(self.TURNS, key=lambda x: dis[x]):
                 test_x, test_y = node_x + x, node_y + y
                 if test_x < 0 or test_x > 99 or test_y < 0 or test_y > 99:
                     continue

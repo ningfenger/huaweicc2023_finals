@@ -864,15 +864,38 @@ class Controller:
         return offset
 
     def obt_near(self, robot):
-        row, col = self.m_map.loc_float2int(*robot.loc)
-        for row_offset, col_offset in Workmap.TURNS:
-            new_row = row + row_offset
-            new_col = col + col_offset
-            if new_col < 0 or new_col > 99 or new_row < 0 or new_row > 99 or self.m_map.map_gray[new_row][
-                    new_col] == Workmap.BLOCK:
-                return False
-        return True
+        # 更新实现，利用官方雷达
+        # 提取打到障碍物激光点的距离
+        dis_obt = robot.radar_info_dis[robot.radar_info_obt]
 
+        # 判定小于阈值的点
+        judge = dis_obt < 0.7
+
+        # 存在 返回
+        if judge.any():
+            # 周围有障碍物
+            return False
+        else:
+            # 周围没有障碍物
+            return True
+    # 尝试找更好的路径
+    def obt_near_path(self, robot):
+        # 更新实现，利用官方雷达
+        # 提取打到障碍物激光点的距离
+        dis_obt = robot.radar_info_dis[robot.radar_info_obt]
+
+        # 判定小于阈值的点
+        judge = dis_obt < 0.7
+
+        # 存在 返回
+        if judge.any():
+            # 周围有障碍物
+            return False
+        else:
+            # 周围没有障碍物
+            return True
+
+    
     def obt_near_count(self, robot):
         row, col = self.m_map.loc_float2int(*robot.loc)
         count = 0
@@ -948,8 +971,8 @@ class Controller:
         radar_y = robot.radar_info_y
 
         # mask为true表示为潜在的机器人 通过已知障碍物排除
-        mask = tools.is_multiple_of_half(radar_y) & tools.is_multiple_of_half(radar_x)
-
+        # mask = tools.is_multiple_of_half(radar_y) & tools.is_multiple_of_half(radar_x)
+        mask = np.logical_not(robot.radar_info_obt)
         # 相对于当前机器人的xy
         radar_rel_x = radar_x - loc_this[0]
         radar_rel_y = radar_y - loc_this[1]
@@ -1291,18 +1314,36 @@ class Controller:
         '''
         为机器人重新规划路劲
         '''
+        # 判断周围是否有障碍
+        loc = robot.loc
+        # x0, y0 = self.m_map.loc_float2int(*loc)
+        # broad0 = self.m_map.map_gray[x0][y0]
+        # if self.obt_near(robot):
+        #     # 尝试在45度方向寻找更宽阔的路
+        #     theta_l = robot.toward + math.pi / 4
+        #     theta_r = robot.toward - math.pi / 4
+        #     loc1 = (robot.loc[0] + 0.7 * math.cos(theta_l), robot.loc[1] + 0.7 * math.sin(theta_l))
+        #     loc2 = (robot.loc[0] + 0.7 * math.cos(theta_r), robot.loc[1] + 0.7 * math.sin(theta_r))
+        #     x1, y1 = self.m_map.loc_float2int(*loc1)
+        #     broad1 = self.m_map.map_gray[x1][y1]
+        #     x2, y2 = self.m_map.loc_float2int(*loc2)
+        #     broad2 = self.m_map.map_gray[x2][y2]
+        #     if broad1 > broad0:
+        #         loc = loc1
+        #     elif broad2 > broad0:
+        #         loc = loc2
         if robot.status in [Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS]:
             # 重新规划路径
             robot.set_path(self.m_map.get_float_path(
-                robot.loc, robot.get_buy(), self.blue_flag))
+                loc, robot.get_buy(), self.blue_flag))
             robot.status = Robot.MOVE_TO_BUY_STATUS
         elif robot.status in [Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS]:
             robot.set_path(self.m_map.get_float_path(
-                robot.loc, robot.get_sell(), self.blue_flag, True))
+                loc, robot.get_sell(), self.blue_flag, True))
             robot.status = Robot.MOVE_TO_SELL_STATUS
         elif robot.status == Robot.BLOCK_OTRHER:
             robot.set_path(self.m_map.get_float_path(
-                robot.loc, robot.target, not self.blue_flag, robot.item_type > 0))
+                loc, robot.target, not self.blue_flag, robot.item_type > 0))
 
     def process_deadlock(self, robot1_idx, robot2_idx, priority_idx=-1, safe_dis: float = None):
         '''

@@ -66,6 +66,7 @@ class Robot:
         self.radar_info_theta = None
         self.radar_info_x = None
         self.radar_info_y = None
+        self.radar_info_obt = None
 
     def get_frame_reman(self):
         '''
@@ -165,6 +166,15 @@ class Robot:
 
         return row1
 
+    def dist2path(self):
+        path = np.array(self.path)
+        robot_pos = np.array(self.loc)
+        dists = np.sqrt(np.sum((path - robot_pos) ** 2, axis=1))
+        nearest_row = np.argmin(dists)
+
+
+        return nearest_row
+    
     # 四个动作
     def forward(self, speed: float):
         '''
@@ -230,3 +240,5 @@ class Robot:
         self.radar_info_dis = np.array(float_list)
         self.radar_info_x = self.radar_info_dis * np.cos(self.radar_info_theta) + self.loc[0]
         self.radar_info_y = self.radar_info_dis * np.sin(self.radar_info_theta) + self.loc[1]
+        mask = is_multiple_of_half(self.radar_info_x) & is_multiple_of_half(self.radar_info_y)
+        self.radar_info_obt = np.logical_not(mask)
