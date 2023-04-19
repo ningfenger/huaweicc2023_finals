@@ -50,8 +50,8 @@ class Controller:
     MAX_FREE = 10*50
     # 最长超时, 超时放弃此目标
     MAX_TIME_OUT = -10*50
-    # 最长买卖路途， 如果太长直接崽人
-    MAX_BUY_ZAI = 30*6*2
+    # 最长额外买卖， 如果太长直接崽人
+    MAX_BUY_ZAI = 20*50/MOVE_SPEED # 第一个参数是最长能接受的秒数
 
     # 最多不可达工作台帧数, 超时重置为可达
     MAX_CAN_NOT_REACH = 2*50
@@ -142,6 +142,11 @@ class Controller:
         '''
         规划一个阻碍工作台的路径
         '''
+        # 直接去崽人
+        derect_block_path = self.m_map.get_path(
+                robot.loc, workbench_block, not self.blue_flag, False)
+        if not derect_block_path:
+            return False
         # 先尝试买一个东西再去崽人
         min_path_length = None  # 记录最短路线
         for workbench_buy in robot.target_workbench_list:
@@ -156,15 +161,11 @@ class Controller:
             if not min_path_length or len(buy_path) + len(block_path) < min_path_length:
                 min_path_length = len(buy_path) + len(block_path)
                 robot.set_plan(workbench_buy, workbench_block)
-        if min_path_length and min_path_length < self.MAX_BUY_ZAI:
+        if min_path_length and min_path_length - len(derect_block_path) < self.MAX_BUY_ZAI:
             return True
         else:
-            block_path = self.m_map.get_path(
-                robot.loc, workbench_block, not self.blue_flag, False)
-            if block_path:
-                robot.set_plan(workbench_block, -1)
-                return True
-        return
+            robot.set_plan(workbench_block, -1)
+            return True
 
     def attack_all(self):
         '''
@@ -276,7 +277,7 @@ class Controller:
         if robot.item_type > 0:
             item_type = robot.item_type
             # sys.stderr.write(f'item_type:{item_type}\n')
-            self.can_not_reach_workbenchs[sell_idx] = self.MAX_CAN_NOT_REACH*(1<<self.black_workbenchs.get(sell_idx,0))
+            self.can_not_reach_workbenchs[sell_idx] = self.MAX_CAN_NOT_REACH#*(1<<self.black_workbenchs.get(sell_idx,0))
             self.black_workbenchs[sell_idx] = self.black_workbenchs.get(sell_idx,0)+1
             # 尝试找个地方卖了
             min_sell_frame = None
@@ -313,7 +314,7 @@ class Controller:
                 return
         else:
             # 设置工作台不可达状态
-            self.can_not_reach_workbenchs[buy_idx] = self.MAX_CAN_NOT_REACH*(1<<self.black_workbenchs.get(buy_idx,0))
+            self.can_not_reach_workbenchs[buy_idx] = self.MAX_CAN_NOT_REACH#*(1<<self.black_workbenchs.get(buy_idx,0))
             self.black_workbenchs[buy_idx] = self.black_workbenchs.get(buy_idx,0)+1
         # 重置为空闲状态
         robot.status = Robot.FREE_STATUS
@@ -1309,7 +1310,8 @@ class Controller:
         # 这一状态最好老老实实追点, 少用re_path
         elif robot.status == Robot.AVOID_CLASH:
             other_locs = [self.robots[idx].loc for idx in range(len(self.robots)) if idx!=robot.loc]
-            other_locs.extend(zip(*self.rival_list)[1])
+            if self.rival_list:
+                other_locs.extend(list(zip(*self.rival_list))[1])
             target_loc = self.workbenchs[robot.target].loc
             new_way = self.m_map.get_a_new_way(robot.loc, target_loc, other_locs, robot.item_type>0)
             if new_way:
@@ -1380,7 +1382,7 @@ class Controller:
         '''
         # 在这里执行冲突检测和化解并记得记录上一个机器人的状态
         # 如果冲突无法化解，让每个机器人都倒一下车
-        # self.detect_deadlock(frame_id)
+        self.detect_deadlock(frame_id)
         locs = [robot.loc for robot in self.robots]
         for idx, robot in enumerate(self.robots):
             if not robot.is_stuck or robot.status in [Robot.BLOCK_OTRHER, Robot.FREE_STATUS]:
@@ -1434,8 +1436,7 @@ class Controller:
                     idx_workbench_to_buy = robot.get_buy()
                     idx_workbench_to_sell = robot.get_sell()
                     robot.target = idx_workbench_to_buy
-                    robot.set_path(self.m_map.get_float_path(
-                        robot.loc, idx_workbench_to_buy, self.blue_flag))
+                    self.re_path(robot)
                     # 预定工作台
                     self.workbenchs[idx_workbench_to_buy].pro_buy()
                     self.workbenchs[idx_workbench_to_sell].pro_sell(
@@ -1476,17 +1477,18 @@ class Controller:
                         self.workbenchs[idx_workbench_to_buy].pro_buy(False)
                         idx_workbench_to_sell = robot.get_sell()
                         robot.target = idx_workbench_to_sell  # 更新目标到卖出地点
+                        # 取消拉黑
+                        if idx_workbench_to_buy in self.black_workbenchs:
+                            self.black_workbenchs.pop(idx_workbench_to_buy)
                         if robot.block_model:
                             robot.status = Robot.BLOCK_OTRHER  # 切换为崽人
                         else:
                             robot.status = Robot.MOVE_TO_SELL_STATUS  # 切换为 【出售途中】
-                        robot.set_path(self.m_map.get_float_path(
-                            robot.loc, idx_workbench_to_sell, self.blue_flag, True))
+                        self.re_path(robot)
                         continue
                     else:
                         robot.status = Robot.MOVE_TO_BUY_STATUS
-                        robot.set_path(self.m_map.get_float_path(
-                            robot.loc, robot.get_buy(), self.blue_flag))
+                        self.re_path(robot)
                         continue
             elif robot_status == Robot.MOVE_TO_SELL_STATUS:
                 # 【出售途中】
@@ -1528,6 +1530,9 @@ class Controller:
                                 self.starve[Workbench.WORKSTAND_STARVE[workbench_sell.material + (
                                     1 << robot.item_type)]] += 1
                             # sys.stderr.write(f"material: {self.starve}\n")
+                        # 取消拉黑
+                        if idx_workbench_to_sell in self.black_workbenchs:
+                            self.black_workbenchs.pop(idx_workbench_to_sell)
                         # 取消预定
                         sell_out_list.append(idx_robot)
                         robot.status = Robot.FREE_STATUS
@@ -1535,8 +1540,7 @@ class Controller:
                         # continue
                     else:
                         robot.status = Robot.MOVE_TO_SELL_STATUS  # 购买失败说明位置不对，切换为 【出售途中】
-                        robot.set_path(self.m_map.get_float_path(
-                            robot.loc, idx_workbench_to_sell, self.blue_flag, True))
+                        self.re_path(robot)
                         continue
             elif robot_status == Robot.AVOID_CLASH:
                 # 解除此状态

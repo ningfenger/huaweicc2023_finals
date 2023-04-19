@@ -463,17 +463,14 @@ class Workmap:
     def astar_search(self, graph, start, end, low_value):
         # 定义开放和关闭列表
         open_list = []
-        closed_list = set()
+        visited = set()
 
         # 添加起点
         heapq.heappush(open_list, (start.f, start))
-
+        visited.add((start.x,start.y))
         while open_list:
             # 取出 f 值最小的节点
             current = heapq.heappop(open_list)[1]
-
-            # 将当前节点加入关闭列表
-            closed_list.add(current)
 
             if current.x == end.x and current.y == end.y:
                 # 找到终点，返回路径
@@ -487,26 +484,19 @@ class Workmap:
                 x, y = current.x + dx, current.y + dy
 
                 # 节点越界或不可通过，跳过
-                if x < 0 or x >= len(graph) or y < 0 or y >= len(graph[0]) or not graph[x][y]<low_value:
+                if x < 0 or x >= len(graph) or y < 0 or y >= len(graph[0]) or graph[x][y]<low_value:
                     continue
-
+                if (x,y) in visited:
+                    continue
                 neighbor = self.Node(x,y,True)
-
-                # 如果 neighbor 早已在关闭列表中，跳过
-                if neighbor in closed_list:
-                    continue
-
                 # 新的距离
                 new_g = current.g + 1
-
-                # 如果 neighbor 不在开放列表中，或距离更远
-                if neighbor not in [x[1] for x in open_list] or new_g < neighbor.g:
-                    # 更新或添加到开放列表
-                    neighbor.g = new_g
-                    neighbor.h = abs(end.x-neighbor.x)+abs(end.y-neighbor.y) 
-                    neighbor.f = neighbor.g + neighbor.h
-                    neighbor.parent = current
-                    heapq.heappush(open_list, (neighbor.f, neighbor))
+                neighbor.g = new_g
+                neighbor.h = abs(end.x-neighbor.x)+abs(end.y-neighbor.y) 
+                neighbor.f = neighbor.g + neighbor.h
+                neighbor.parent = current
+                heapq.heappush(open_list, (neighbor.f, neighbor))
+                visited.add((neighbor.x, neighbor.y))
 
         # 没有找到路径
         return None
