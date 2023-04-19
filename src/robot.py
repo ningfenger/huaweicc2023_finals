@@ -42,7 +42,6 @@ class Robot:
         self.pre_position = np.array(list(self.loc))
         self.pre_frame = -1  # 记录上次一帧内移动距离大于min_dis
         self.pre_toward = 0  # 记录上次一帧内移动距离大于min_dis的角度
-        self.is_deadlock = False  # True if the robot is in a deadlock state
         self.loc_np = np.array(list(self.loc))
         self.is_stuck = False  # True if the robot is stuck with wall
         self.last_status = self.FREE_STATUS  # 用于冲撞避免的恢复 如果是等待购买和等待出售直接设置为购买/出售途中，并重新导航
