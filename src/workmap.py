@@ -172,33 +172,33 @@ class Workmap:
                 if len(tmp_blocks) == 0:
                     self.map_gray[i][j] = self.BROAD_ROAD
                     continue
-                elif len(tmp_blocks) == 1:
-                    '''
-                    ...     ...
-                    ....   ....
-                     ...   ...
-                    '''
-                    x, y = tmp_blocks[0]
-                    if x == 0 or y == 0:  # 必须是四个角上
-                        continue
-                    # flag1 = 0 <= j - 2 * y <= 99 and self.map_gray[i][j - 2 * y] != self.BLOCK and \
-                    #     self.map_gray[i + x][j - 2 * y] != self.BLOCK
-                    # flag2 = 0 <= i + 2 * x <= 99 and self.map_gray[i + 2 * x][j] != self.BLOCK and \
-                    #     self.map_gray[i + 2*x][j + y] != self.BLOCK
-                    flag1 = 0 <= j - 2 * x <= 99 and self.map_gray[j - 2 * x][i] != self.BLOCK and \
-                        self.map_gray[j - 2 * x][i + y] != self.BLOCK
-                    flag2 = 0 <= i - 2 * x <= 99 and self.map_gray[i - 2 * x][j] != self.BLOCK and \
-                        self.map_gray[i - 2 * x][j + y] != self.BLOCK
-                    if flag1 and flag2:
-                        self.map_gray[i][j] = self.BROAD_ROAD
-                        # 要根据具体情况加偏移量
-                        if self.map_gray[i - 2 * x][j - y] == self.BLOCK:
-                            self.broad_shifting[(i, j)] = (0, x * 0.249)
-                        elif self.map_gray[j - 2 * x][i - y] == self.BLOCK:
-                            self.broad_shifting[(i, j)] = (-y * 0.249, 0)
-                        else:
-                            # 往远离的方向推
-                            self.broad_shifting[(i, j)] = (-y * 0.249, x * 0.249)
+                # elif len(tmp_blocks) == 1:
+                #     '''
+                #     ...     ...
+                #     ....   ....
+                #      ...   ...
+                #     '''
+                #     x, y = tmp_blocks[0]
+                #     if x == 0 or y == 0:  # 必须是四个角上
+                #         continue
+                #     # flag1 = 0 <= j - 2 * y <= 99 and self.map_gray[i][j - 2 * y] != self.BLOCK and \
+                #     #     self.map_gray[i + x][j - 2 * y] != self.BLOCK
+                #     # flag2 = 0 <= i + 2 * x <= 99 and self.map_gray[i + 2 * x][j] != self.BLOCK and \
+                #     #     self.map_gray[i + 2*x][j + y] != self.BLOCK
+                #     flag1 = 0 <= j - 2 * x <= 99 and self.map_gray[j - 2 * x][i] != self.BLOCK and \
+                #         self.map_gray[j - 2 * x][i + y] != self.BLOCK
+                #     flag2 = 0 <= i - 2 * x <= 99 and self.map_gray[i - 2 * x][j] != self.BLOCK and \
+                #         self.map_gray[i - 2 * x][j + y] != self.BLOCK
+                #     if flag1 and flag2:
+                #         self.map_gray[i][j] = self.BROAD_ROAD
+                #         # 要根据具体情况加偏移量
+                #         if self.map_gray[i - 2 * x][j - y] == self.BLOCK:
+                #             self.broad_shifting[(i, j)] = (0, x * 0.249)
+                #         elif self.map_gray[j - 2 * x][i - y] == self.BLOCK:
+                #             self.broad_shifting[(i, j)] = (-y * 0.249, 0)
+                #         else:
+                #             # 往远离的方向推
+                #             self.broad_shifting[(i, j)] = (-y * 0.249, x * 0.249)
 
         # 再算窄路
         for i in range(100):
@@ -458,13 +458,12 @@ class Workmap:
                     self.sell_map_red[idx] = copy.deepcopy(base_map)
                 self.gen_a_path(idx, loc, blue_flag, False)
                 self.gen_a_path(idx, loc, blue_flag, True)
-
     # 定义 A* 算法搜索函数
-    def astar_search(self, graph, start, end, low_value):
+    def astar_search(self, graph, start, end, low_value, max_walk):
         # 定义开放和关闭列表
         open_list = []
         visited = set()
-
+        walk=0
         # 添加起点
         heapq.heappush(open_list, (start.f, start))
         visited.add((start.x,start.y))
@@ -472,7 +471,7 @@ class Workmap:
             # 取出 f 值最小的节点
             current = heapq.heappop(open_list)[1]
 
-            if current.x == end.x and current.y == end.y:
+            if current.x == end.x and current.y == end.y or walk==max_walk:
                 # 找到终点，返回路径
                 path = []
                 while current:
@@ -497,6 +496,7 @@ class Workmap:
                 neighbor.parent = current
                 heapq.heappush(open_list, (neighbor.f, neighbor))
                 visited.add((neighbor.x, neighbor.y))
+            walk+=1
 
         # 没有找到路径
         return None
@@ -523,7 +523,7 @@ class Workmap:
             block_turns = self.TURNS + [(0, 0)]
             for x, y in block_turns:
                 block_x, block_y = self.loc_float2int(
-                    robot_loc[0]+x*0.5, robot_loc[1]+y*0.5)
+                robot_loc[0]+x*0.5, robot_loc[1]+y*0.5)
                 if block_x < 0 or block_x > 99 or block_y < 0 or block_y > 99:
                     continue
                 tmp_map_gray[block_x][block_y] = self.BLOCK
@@ -535,14 +535,14 @@ class Workmap:
         # 开始A*
         start = self.Node(node_x, node_y, True)
         start.h = abs(target_x-start.x)+abs(target_y-start.y)
-        path = self.astar_search(tmp_map_gray, start, self.Node(target_x, target_y, True), low_value)
+        path = self.astar_search(tmp_map_gray, start, self.Node(target_x, target_y, True), low_value, max_walk)
         if not path:
             return None
         for i in range(len(path)-1):
             x,y = path[i]
             path[i]=self.loc_int2float(x,y, self.map_gray[x][y] == self.ROAD)
         path[-1] = self.loc_int2float_normal(*path[-1])
-        return path[-1]
+        return path
 
     def get_avoid_path(self, wait_flaot_loc, work_path, robots_loc, broad_road=False, safe_dis: float = None):
         '''

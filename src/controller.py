@@ -51,14 +51,15 @@ class Controller:
     # 最长超时, 超时放弃此目标
     MAX_TIME_OUT = -10*50
     # 最长额外买卖， 如果太长直接崽人
-    MAX_BUY_ZAI = 20*50/MOVE_SPEED # 第一个参数是最长能接受的秒数
+    MAX_BUY_ZAI = 20*50/MOVE_SPEED  # 第一个参数是最长能接受的秒数
 
     # 最多不可达工作台帧数, 超时重置为可达
     MAX_CAN_NOT_REACH = 2*50
 
-
-    def __init__(self, robots: List[Robot], workbenchs: List[Workbench], rival_workbenchs: List[Workbench], m_map: Workmap, blue_flag: bool):
+    def __init__(self, robots: List[Robot],rival_robots: List[Robot], workbenchs: List[Workbench], rival_workbenchs: List[Workbench], m_map: Workmap, blue_flag: bool):
         self.robots = robots
+        # 敌方机器人
+        self.rival_robots = rival_robots
         self.workbenchs = workbenchs
         # 敌方工作台
         self.rival_workbenchs = rival_workbenchs
@@ -70,13 +71,10 @@ class Controller:
         self.buy_list = []  # 执行过出售操作的机器人列表
         self.sell_list = []  # 执行过购买操作的机器人列表
         self.tmp_avoid = {}  # 暂存避让计算结果
-        
+
         # 攻守
-        self.other_workbenchs = [[]for _ in range(9)]  # 按类型记录敌方工作台 idx 类型 v 编号
-        self.other_workbenchs_order = list(range(1, 9))  # 按进攻优先级排序
-        self.attacked = set()  # 记录已被攻击的工作台
-        self.no_use_attack = set()  # 记录无需被攻击的工作台 ？
-        self.can_not_reach_workbenchs = {} # 记录无法到达的工作台即持续帧数
+        self.other_workbenchs_order = deque()  # 按进攻优先级排序工作台
+        self.can_not_reach_workbenchs = {}  # 记录无法到达的工作台即持续帧数
         self.rival_list = []
         # 开始派多少机器人去捣乱
         self.max_block_robots = 1 if self.blue_flag else 1
@@ -112,55 +110,162 @@ class Controller:
             other_workbenchs_reach_set.update(
                 other_workbenchs_reach_sell[w_ID])
         other_workbenchs_score = [0]*9  # 按类型记录敌方得分 idx 类型 v 分数(攻击难度)
+        other_workbenchs = [[]for _ in range(9)]  # 按类型记录敌方工作台 idx 类型 v 编号
         for (i, j), (w_type, w_ID) in self.m_map.get_workbenchs(not self.blue_flag).items():
             if w_ID not in other_workbenchs_reach_set:  # 敌方到不了的工作台, 不用管
                 continue
-            score = 1 if self.m_map_arr[i][j] == self.m_map.SUPER_BROAD_ROAD else 0
+
+            score = self.m_map_arr[i][j]
             # 9 可以让4-8+1
             if w_type == 9:
                 for idx in range(4, 9):
-                    self.other_workbenchs[idx].append(w_ID)
+                    other_workbenchs[idx].append(w_ID)
                     other_workbenchs_score[idx] += score
             else:
-                self.other_workbenchs[w_type].append(w_ID)
+                other_workbenchs[w_type].append(w_ID)
                 other_workbenchs_score[w_type] += score
         # 优先选数目最少的工作台 同数目选障碍物多的 同障碍物选类型编号小的
 
         def cmp(idx1, idx2):
-            if len(self.other_workbenchs[idx1]) < len(self.other_workbenchs[idx2]):
+            if len(other_workbenchs[idx1]) < len(other_workbenchs[idx2]):
                 return -1
-            elif len(self.other_workbenchs[idx1]) == len(self.other_workbenchs[idx2]):
+            elif len(other_workbenchs[idx1]) == len(other_workbenchs[idx2]):
                 if other_workbenchs_score[idx1] < other_workbenchs_score[idx2]:
                     return -1
                 elif other_workbenchs_score[idx1] == other_workbenchs_score[idx2] and idx1 < idx2:
                     return -1
             return 1
-        # 按优先级排序
-        self.other_workbenchs_order.sort(key=cmp_to_key(cmp))
+        # 按优先级对类型排序
+        other_workbenchs_type_order = list(range(1, 9))
+        other_workbenchs_type_order.sort(key=cmp_to_key(cmp))
+        # 工作台的类型得分
+        type_score = [0]*10
+        for score, w_type in enumerate(other_workbenchs_type_order):
+            # 排序越靠前得分越高
+            type_score[w_type] = 10-score
+            # 与可出售对象里面最高的高半级
+            if w_type >=4 and type_score[9]==0:
+                type_score[9] = 10-score+0.5
+        arrive_score = [0]*len(self.rival_workbenchs) # 按照敌方到达的顺序打分
 
-    def get_attack_path(self, robot: Robot, workbench_block):
+        # 假装自己是敌方, 对每个工作台打分
+        # 暂存一下己方数据, 防止影响后序使用
+        tmp_robots = self.robots
+        tmp_workbenchs = self.workbenchs
+        self.blue_flag = not self.blue_flag
+        # 设置敌方工作台123的状态为生产完成
+        for rwb in self.rival_workbenchs:
+            if rwb.typeID < 4:
+                rwb.product_status = 1
+        # 给敌方披上友军的衣服                      
+        self.robots = self.rival_robots
+        self.workbenchs = self.rival_workbenchs
+        # 结束标志， 当敌方机器人都无事可做 模拟完成
+        over_flag = False
+        score = 1000
+        while not over_flag:
+            over_flag = True
+            # 模拟决策
+            for robot in self.robots:
+                # 有一个机器人还有事可做
+                if self.choise(1, robot):
+                    over_flag = False
+                    idx_workbench_to_buy = robot.get_buy()
+                    idx_workbench_to_sell = robot.get_sell()
+                    robot.target = idx_workbench_to_buy
+                    self.re_path(robot)
+                    # 预定工作台
+                    self.workbenchs[idx_workbench_to_buy].pro_buy()
+                    self.workbenchs[idx_workbench_to_sell].pro_sell(
+                        self.workbenchs[idx_workbench_to_buy].typeID)
+                else:
+                    robot.set_plan(-1,-1)
+            # 模拟已经完成上一步
+            for robot in self.robots:
+                idx_workbench_to_buy = robot.get_buy()
+                idx_workbench_to_sell = robot.get_sell()
+                if idx_workbench_to_buy == -1 or idx_workbench_to_sell == -1:
+                    continue
+                # 取消预售预购
+                workbench_to_buy = self.workbenchs[idx_workbench_to_buy]
+                workbench_to_sell = self.workbenchs[idx_workbench_to_sell]
+                workbench_to_buy.pro_buy(False)
+                workbench_to_sell.pro_sell(
+                        self.workbenchs[idx_workbench_to_buy].typeID, False)
+                # 模拟购入售出
+                if arrive_score[idx_workbench_to_buy] == 0:
+                    arrive_score[idx_workbench_to_buy] = score
+                    score -= 1
+                # 1 2 3 不用处理售出
+                if workbench_to_buy.typeID > 3:
+                    # 直接拉黑这个工作台，防止无法结束
+                    self.can_not_reach_workbenchs[idx_workbench_to_buy] = 1
+                # 8 9 号的处理
+                if workbench_to_sell.typeID in [8,9]:
+                    if arrive_score[idx_workbench_to_sell] == 0:
+                        arrive_score[idx_workbench_to_sell] = score
+                        score -= 1
+                    self.can_not_reach_workbenchs[idx_workbench_to_sell] = 1
+                # 装格, 满了应该也不会有人将其作为目标了
+                workbench_to_sell.material += (1<<workbench_to_buy.typeID)
+                if workbench_to_sell.check_materials_full:
+                    workbench_to_sell.product_status = 1
+                    if arrive_score[idx_workbench_to_sell] == 0:
+                        arrive_score[idx_workbench_to_sell] = score
+                        score -= 1
+                # 处理机器人坐标
+                robot.loc = workbench_to_sell.loc
+        # 恢复现场
+        self.robots = tmp_robots
+        self.workbenchs = tmp_workbenchs
+        self.can_not_reach_workbenchs.clear()
+        self.blue_flag = not self.blue_flag
+        # 最终排序, 先按类型排序再按到达排序再按类型试试
+        def cmp_final(idx1, idx2):
+            type_ID1 = self.rival_workbenchs[idx1].typeID
+            type_ID2 = self.rival_workbenchs[idx2].typeID
+            if type_score[type_ID1] > type_score[type_ID2]:
+                return -1
+            elif arrive_score[idx1] > arrive_score[idx2]:
+                return -1
+            return 1
+        other_workbenchs_list = set()
+        for ows in other_workbenchs:
+            for ow in ows:
+                other_workbenchs_list.add(ow)
+        self.other_workbenchs_order = deque(sorted(list(other_workbenchs_list), key= cmp_to_key(cmp_final)))
+                    
+    def get_attack_path(self, robot: Robot, workbench_block, mast_run=False):
         '''
         规划一个阻碍工作台的路径
         '''
+        # 手里已经有东西
+        if robot.item_type > 0: 
+            block_path = self.m_map.get_path(robot.loc, workbench_block, not self.blue_flag, True)
+            if block_path:
+                robot.set_plan(workbench_block, -1)
+                return True
+            return False
         # 直接去崽人
         derect_block_path = self.m_map.get_path(
-                robot.loc, workbench_block, not self.blue_flag, False)
+            robot.loc, workbench_block, not self.blue_flag, False)
         if not derect_block_path:
             return False
         # 先尝试买一个东西再去崽人
         min_path_length = None  # 记录最短路线
-        for workbench_buy in robot.target_workbench_list:
-            if self.workbenchs[workbench_buy].typeID not in [1, 2, 3]:
-                continue
-            block_path = self.m_map.get_path(
-                self.workbenchs[workbench_buy].loc, workbench_block, not self.blue_flag, True)
-            if not block_path:
-                continue
-            buy_path = self.m_map.get_path(
-                robot.loc, workbench_buy, self.blue_flag, False)
-            if not min_path_length or len(buy_path) + len(block_path) < min_path_length:
-                min_path_length = len(buy_path) + len(block_path)
-                robot.set_plan(workbench_buy, workbench_block)
+        if not mast_run:
+            for workbench_buy in robot.target_workbench_list:
+                if self.workbenchs[workbench_buy].typeID not in [1, 2, 3]:
+                    continue
+                block_path = self.m_map.get_path(
+                    self.workbenchs[workbench_buy].loc, workbench_block, not self.blue_flag, True)
+                if not block_path:
+                    continue
+                buy_path = self.m_map.get_path(
+                    robot.loc, workbench_buy, self.blue_flag, False)
+                if not min_path_length or len(buy_path) + len(block_path) < min_path_length:
+                    min_path_length = len(buy_path) + len(block_path)
+                    robot.set_plan(workbench_buy, workbench_block)
         if min_path_length and min_path_length - len(derect_block_path) < self.MAX_BUY_ZAI:
             return True
         else:
@@ -173,7 +278,7 @@ class Controller:
         为了防止极端情况下直接报错退出, 建议调用此函数时直接try一下, 如果报错放弃崽人
         '''
         # 说明是地图4并且我方是红方
-        if not self.other_workbenchs:
+        if not self.other_workbenchs_order:
             return
         zz_robots: List[Robot] = []  # 无事可做机器人
         for robot in self.robots:
@@ -185,31 +290,47 @@ class Controller:
                 zz_robots.append(robot)
         # 说明是地图2或者地图4, 全部进攻即可
         if zz_robots:
-            for w_type in self.other_workbenchs_order:
-                for workbench_block in self.other_workbenchs[w_type]:
-                    for robot in zz_robots:
-                        # 已经有任务
-                        if robot.block_model:
-                            continue
-                        if self.get_attack_path(robot, workbench_block):
-                            robot.block_model = True
-                            break
-                    if all([robot.block_model for robot in zz_robots]):
+            # 暂存没有用到的工作台
+            tmp_wb = []
+            for _ in range(len(self.other_workbenchs_order)):
+                workbench_block = self.other_workbenchs_order.popleft()
+                if self.rival_workbenchs[workbench_block].typeID in [7, 8, 9]:
+                    # 开局暂不去7 8
+                    tmp_wb.append(workbench_block)
+                    continue
+                for robot in zz_robots:
+                    if robot.block_model:
+                        continue
+                    if self.get_attack_path(robot, workbench_block):
+                        robot.block_model = True
                         break
+                self.other_workbenchs_order.append(workbench_block)
+                if all([robot.block_model for robot in zz_robots]):
+                    break
+            for twb in tmp_wb:
+                self.other_workbenchs_order.appendleft(twb)
         else:
+            tmp_wb = []
             attack_num = 0
-            for w_type in self.other_workbenchs_order:
-                for workbench_block in self.other_workbenchs[w_type]:
-                    for robot in self.robots:
-                        if robot.block_model:
-                            continue
-                        if self.get_attack_path(robot, workbench_block):
-                            robot.block_model = True
-                            attack_num += 1
-                            break
-                if attack_num == self.max_block_robots:
-                    break 
-                
+            for _ in range(len(self.other_workbenchs_order)):
+                if attack_num >= self.max_block_robots:
+                    break
+                workbench_block = self.other_workbenchs_order.popleft()
+                if self.rival_workbenchs[workbench_block].typeID in [7, 8, 9]:
+                    # 开局暂不去7 8
+                    tmp_wb.append(workbench_block)
+                    continue
+                for robot in self.robots:
+                    if robot.block_model:
+                        continue
+                    if self.get_attack_path(robot, workbench_block):
+                        robot.block_model = True
+                        attack_num += 1
+                        break
+                self.other_workbenchs_order.append(workbench_block)
+            for twb in tmp_wb:
+                self.other_workbenchs_order.appendleft(twb)
+
         # 最后集中处理一下机器人状态:
         for robot in self.robots:
             if robot.block_model:
@@ -218,47 +339,42 @@ class Controller:
                     robot.set_path(self.m_map.get_float_path(
                         robot.loc, robot.target, self.blue_flag, False))
                     robot.status = Robot.MOVE_TO_BUY_STATUS
-                    self.attacked.add(robot.get_sell())
                 else:  # 直接去找事
                     robot.target = robot.get_buy()
                     robot.set_path(self.m_map.get_float_path(
                         robot.loc, robot.target, not self.blue_flag, False))
                     robot.status = Robot.BLOCK_OTRHER
-                    self.attacked.add(robot.get_buy())
+                    self.rival_workbenchs[robot.target].attack_value = Workbench.MAX_ATTCK_VALUE
 
-    def attack_one(self, robot: Robot):
+    def attack_one(self, robot: Robot, mast_run=False):
         '''
         一个闲着没事的机器人想要没事找事
+        mast_run: 不要去买东西了
         '''
-        for w_type in self.other_workbenchs_order:
-            for workbench_block in self.other_workbenchs[w_type]:
-                if workbench_block in self.attacked:
-                    continue
-                if workbench_block in self.no_use_attack:
-                    continue
-                if self.get_attack_path(robot, workbench_block):
-                    robot.block_model = True
-                    break
-            else:
-                continue
-            break
-        if robot.block_model:
-            if robot.get_sell != -1:  # 先买个东西再去崽
-                robot.target = robot.get_buy()
-                robot.set_path(self.m_map.get_float_path(
-                    robot.loc, robot.target, self.blue_flag, False))
-                robot.status = Robot.MOVE_TO_BUY_STATUS
-                self.attacked.add(robot.get_sell()) 
-            else:  # 直接去找事
-                robot.target = robot.get_buy()
-                robot.set_path(self.m_map.get_float_path(
-                    robot.loc, robot.target, not self.blue_flag, False))
-                robot.status = Robot.BLOCK_OTRHER
-                self.attacked.add(robot.get_buy())
+        for _ in range(len(self.other_workbenchs_order)):
+            workbench_block = self.other_workbenchs_order.popleft()
+            self.other_workbenchs_order.append(workbench_block)
+            if self.get_attack_path(robot, workbench_block, mast_run):
+                robot.block_model = True
+                if robot.get_sell() != -1:  # 先买个东西再去崽
+                    robot.target = robot.get_buy()
+                    robot.set_path(self.m_map.get_float_path(
+                        robot.loc, robot.target, self.blue_flag, False))
+                    robot.status = Robot.MOVE_TO_BUY_STATUS
+                else:  # 直接去找事
+                    robot.target = robot.get_buy()
+                    robot.set_path(self.m_map.get_float_path(
+                        robot.loc, robot.target, not self.blue_flag, robot.item_type > 0))
+                    robot.status = Robot.BLOCK_OTRHER
+                    self.rival_workbenchs[robot.target].attack_value = Workbench.MAX_ATTCK_VALUE
+                break
+            
+
 
     def dis2target(self, idx_robot):
         idx_workbench = self.robots[idx_robot].target
-        w_loc = self.workbenchs[idx_workbench].loc if self.robots[idx_robot].status != Robot.BLOCK_OTRHER else self.rival_workbenchs[idx_workbench].loc
+        w_loc = self.workbenchs[idx_workbench].loc if self.robots[
+            idx_robot].status != Robot.BLOCK_OTRHER else self.rival_workbenchs[idx_workbench].loc
         r_loc = self.robots[idx_robot].loc
         return np.sqrt((r_loc[0] - w_loc[0]) ** 2 + (r_loc[1] - w_loc[1]) ** 2)
 
@@ -272,13 +388,16 @@ class Controller:
         buy_idx = robot.get_buy()
         # 取消预售预购
         self.workbenchs[buy_idx].pro_buy(False)
-        self.workbenchs[sell_idx].pro_sell(self.workbenchs[robot.get_buy()].typeID, False)
+        self.workbenchs[sell_idx].pro_sell(
+            self.workbenchs[robot.get_buy()].typeID, False)
         # 手中持有物品
         if robot.item_type > 0:
             item_type = robot.item_type
             # sys.stderr.write(f'item_type:{item_type}\n')
-            self.can_not_reach_workbenchs[sell_idx] = self.MAX_CAN_NOT_REACH#*(1<<self.black_workbenchs.get(sell_idx,0))
-            self.black_workbenchs[sell_idx] = self.black_workbenchs.get(sell_idx,0)+1
+            # *(1<<self.black_workbenchs.get(sell_idx,0))
+            self.can_not_reach_workbenchs[sell_idx] = self.MAX_CAN_NOT_REACH
+            self.black_workbenchs[sell_idx] = self.black_workbenchs.get(
+                sell_idx, 0)+1
             # 尝试找个地方卖了
             min_sell_frame = None
             for idx_workbench_to_sell in self.workbenchs[robot.get_buy()].target_workbench_list:
@@ -294,7 +413,8 @@ class Controller:
                                                              True)) * self.MOVE_SPEED
                 if not min_sell_frame or min_sell_frame > frame_move_to_sell:
                     min_sell_frame = frame_move_to_sell
-                    sys.stderr.write(f'last_sell:{sell_idx} new_sell:{idx_workbench_to_sell}\n')
+                    # sys.stderr.write(
+                    #     f'last_sell:{sell_idx} new_sell:{idx_workbench_to_sell}\n')
                     robot.set_plan(robot.get_buy(), idx_workbench_to_sell)
                     robot.frame_reman_sell = frame_move_to_sell
             if min_sell_frame:
@@ -306,20 +426,22 @@ class Controller:
                 robot.target = robot.get_sell()
                 self.re_path(robot)
                 return
-            elif robot.item_type<4:
+            elif robot.item_type < 4:
                 robot.destroy()
             else:
                 # 重新预售, 直接返回
-                self.workbenchs[sell_idx].pro_sell(self.workbenchs[robot.get_buy()].typeID)
+                self.workbenchs[sell_idx].pro_sell(
+                    self.workbenchs[robot.get_buy()].typeID)
                 return
         else:
             # 设置工作台不可达状态
-            self.can_not_reach_workbenchs[buy_idx] = self.MAX_CAN_NOT_REACH#*(1<<self.black_workbenchs.get(buy_idx,0))
-            self.black_workbenchs[buy_idx] = self.black_workbenchs.get(buy_idx,0)+1
+            # *(1<<self.black_workbenchs.get(buy_idx,0))
+            self.can_not_reach_workbenchs[buy_idx] = self.MAX_CAN_NOT_REACH
+            self.black_workbenchs[buy_idx] = self.black_workbenchs.get(
+                buy_idx, 0)+1
         # 重置为空闲状态
         robot.status = Robot.FREE_STATUS
 
-    
     def detect_deadlock(self, frame):
         # if frame % 10 != 0:
         #     return
@@ -844,6 +966,7 @@ class Controller:
             # 周围没有障碍物
             return True
     # 尝试找更好的路径
+
     def obt_near_path(self, robot):
         # 更新实现，利用官方雷达
         # 提取打到障碍物激光点的距离
@@ -860,7 +983,6 @@ class Controller:
             # 周围没有障碍物
             return True
 
-    
     def obt_near_count(self, robot):
         row, col = self.m_map.loc_float2int(*robot.loc)
         count = 0
@@ -911,9 +1033,9 @@ class Controller:
 
             # 己方机器人半径
             if robot_filter.item_type == 0:
-                r_filter = 0.53
-            else:
                 r_filter = 0.45
+            else:
+                r_filter = 0.53
 
             # 相对于己方机器人的xy
             radar_rel_x = radar_x - loc_filter[0]
@@ -950,7 +1072,6 @@ class Controller:
 
         # 从己方坐标排除
         mask_our = self.our_filter(radar_x, radar_y)
-
 
         for _ in range(4):
             # 敌方最多4个机器人
@@ -997,7 +1118,8 @@ class Controller:
                     idx_set = [356, 357, 358, 359, 0]
                 else:
                     # 其他值
-                    idx_set = [idx_ori - 2, idx_ori - 1, idx_ori, idx_ori + 1, idx_ori + 2]
+                    idx_set = [idx_ori - 2, idx_ori - 1,
+                               idx_ori, idx_ori + 1, idx_ori + 2]
 
                 # 从360个点中选取5个点（增强鲁棒性）
                 mask_try = mask[idx_set]
@@ -1025,8 +1147,8 @@ class Controller:
                             rival_list.append([(x0, y0), r])
 
     def move(self, idx_robot):
-        
-    # 360雷达前的版本
+
+        # 360雷达前的版本
         robot = self.robots[idx_robot]
         k_r = 8
         flag_obt_near = self.obt_near(robot)
@@ -1172,8 +1294,6 @@ class Controller:
         #             delta_theta -= math.pi / 5
         #             break
 
-
-
         if dis2workbench < 3 and robot.status == Robot.BLOCK_OTRHER and 0:
             print("forward", idx_robot, dis2workbench * 3)
             self.robots[idx_robot].rotate(delta_theta * k_r)
@@ -1282,22 +1402,6 @@ class Controller:
         '''
         # 判断周围是否有障碍
         loc = robot.loc
-        # x0, y0 = self.m_map.loc_float2int(*loc)
-        # broad0 = self.m_map.map_gray[x0][y0]
-        # if self.obt_near(robot):
-        #     # 尝试在45度方向寻找更宽阔的路
-        #     theta_l = robot.toward + math.pi / 4
-        #     theta_r = robot.toward - math.pi / 4
-        #     loc1 = (robot.loc[0] + 0.7 * math.cos(theta_l), robot.loc[1] + 0.7 * math.sin(theta_l))
-        #     loc2 = (robot.loc[0] + 0.7 * math.cos(theta_r), robot.loc[1] + 0.7 * math.sin(theta_r))
-        #     x1, y1 = self.m_map.loc_float2int(*loc1)
-        #     broad1 = self.m_map.map_gray[x1][y1]
-        #     x2, y2 = self.m_map.loc_float2int(*loc2)
-        #     broad2 = self.m_map.map_gray[x2][y2]
-        #     if broad1 > broad0:
-        #         loc = loc1
-        #     elif broad2 > broad0:
-        #         loc = loc2
         if robot.status in [Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS]:
             # 重新规划路径
             robot.set_path(self.m_map.get_float_path(
@@ -1309,13 +1413,22 @@ class Controller:
             robot.status = Robot.MOVE_TO_SELL_STATUS
         # 这一状态最好老老实实追点, 少用re_path
         elif robot.status == Robot.AVOID_CLASH:
-            other_locs = [self.robots[idx].loc for idx in range(len(self.robots)) if idx!=robot.loc]
+            other_locs = [self.robots[idx].loc for idx in range(
+                len(self.robots)) if idx != robot.loc]
             if self.rival_list:
-                other_locs.extend(list(zip(*self.rival_list))[1])
+                other_locs.extend(list(zip(*self.rival_list))[0])
             target_loc = self.workbenchs[robot.target].loc
-            new_way = self.m_map.get_a_new_way(robot.loc, target_loc, other_locs, robot.item_type>0)
+            new_way = self.m_map.get_a_new_way(
+                robot.loc, target_loc, other_locs, robot.item_type > 0)
             if new_way:
                 robot.set_path(new_way)
+            else:
+                # 再次a_star失败直接改机器人状态，repath
+                if robot.item_type > 0:
+                    robot.status = Robot.MOVE_TO_SELL_STATUS
+                else:
+                    robot.status = Robot.MOVE_TO_BUY_STATUS
+                self.re_path(robot)
         elif robot.status == Robot.BLOCK_OTRHER:
             robot.set_path(self.m_map.get_float_path(
                 loc, robot.target, not self.blue_flag, robot.item_type > 0))
@@ -1393,9 +1506,9 @@ class Controller:
                 other_locs.extend(list(zip(*self.rival_list))[0])
             # sys.stderr.write(f"other_locs:{other_locs}\n")
             target_loc = self.workbenchs[robot.target].loc
-            new_way = self.m_map.get_a_new_way(robot.loc, target_loc, other_locs, robot.item_type>0)
-            if new_way: # 切换机器人状态
-                sys.stderr.write(f"new_way:{new_way}\n")
+            new_way = self.m_map.get_a_new_way(
+                robot.loc, target_loc, other_locs, robot.item_type > 0)
+            if new_way:  # 切换机器人状态
                 robot.set_path(new_way)
                 robot.status = robot.AVOID_CLASH
                 robot.is_stuck = False
@@ -1413,11 +1526,20 @@ class Controller:
             self.detect_rival_item(robot, 20, rival_list)
 
         self.rival_list = rival_list
-
-
-
+    def have_rival_robot(self, robot, min_dis = 1.2):
+        '''
+        判断己方机器人附近是否有敌方机器人
+        '''
+        r_loc = np.array(robot.loc)
+        for i_loc in self.rival_list:
+            # sys.stderr.write(f"r_loc:{r_loc}, i_loc:{i_loc[0]}, dis:{tools.np_norm(r_loc, i_loc[0])}\n")
+            if tools.np_norm(r_loc, i_loc[0]) < min_dis:
+                return True
+        return False
+    
     def control(self, frame_id: int, money: int):
-        self.process_long_deadlock(frame_id)
+        # 三个问题 1 A_star算路时间太久 2 AVOID状态下尽量避免re_path 3 使这个的触发条件更严格一些
+        # self.process_long_deadlock(frame_id)
         self.detect_rival()
         print(frame_id)
         sell_out_list = []  # 等待处理预售的机器人列表
@@ -1446,9 +1568,10 @@ class Controller:
                     continue
                 else:
                     robot.free_frames += 1
-                    if robot.free_frames > self.MAX_FREE:
-                        pass
-                        # self.attack_one(robot)
+                    if self.TOTAL_FRAME-frame_id < 1000:
+                        self.attack_one(robot, True)
+                    elif robot.free_frames > self.MAX_FREE:
+                        self.attack_one(robot)
                     else:
                         robot.forward(9)
                         robot.rotate(4)
@@ -1482,6 +1605,7 @@ class Controller:
                             self.black_workbenchs.pop(idx_workbench_to_buy)
                         if robot.block_model:
                             robot.status = Robot.BLOCK_OTRHER  # 切换为崽人
+                            self.rival_workbenchs[robot.target].attack_value = Workbench.MAX_ATTCK_VALUE
                         else:
                             robot.status = Robot.MOVE_TO_SELL_STATUS  # 切换为 【出售途中】
                         self.re_path(robot)
@@ -1544,7 +1668,7 @@ class Controller:
                         continue
             elif robot_status == Robot.AVOID_CLASH:
                 # 解除此状态
-                if self.dis2target(idx_robot)<1:
+                if self.dis2target(idx_robot) < 1:
                     if robot.item_type > 0:
                         robot.status = Robot.MOVE_TO_SELL_STATUS
                     else:
@@ -1556,12 +1680,23 @@ class Controller:
             elif robot_status == Robot.BLOCK_OTRHER:
                 # 这里可以后续加点长时间没人的处理策略
                 self.move(idx_robot)
+                r_w = self.rival_workbenchs[robot.target]
+                if self.have_rival_robot(robot):
+                    r_w.attack_value+=Workbench.ATTCK_VALUE
+                    if self.rival_workbenchs[robot.target].attack_value > Workbench.MAX_ATTCK_VALUE:
+                        r_w.attack_value = Workbench.MAX_ATTCK_VALUE
+                # 在工作台附近才减分
+                elif self.dis2target(idx_robot) < 1.5:
+                    r_w.attack_value-=1
+                    if r_w.attack_value == 0:
+                        self.attack_one(robot)
+                # sys.stderr.write(f'robotID:{robot.ID}, attack_value{r_w.attack_value}\n')
 
             # 根据状态更新预估时间
             self.tmp_avoid.clear()
             robot.update_frame_reman()
             # 严重超时, 重新规划, 对手里有东西的稍微宽容一点
-            if robot.get_frame_reman() < self.MAX_TIME_OUT * (1 if robot.item_type ==0 else 1.5) and robot.is_stuck:
+            if robot.get_frame_reman() < self.MAX_TIME_OUT * (1 if robot.item_type == 0 else 1.5) and robot.is_stuck:
                 self.re_mession(robot)
             idx_robot += 1
         for idx_robot in sell_out_list:
@@ -1569,14 +1704,12 @@ class Controller:
             workbench_sell = self.workbenchs[robot.get_sell()]
             workbench_sell.pro_sell(robot.item_type, False)
         # 处理一下工作台
-        recorve_w_idx = [] # 记录可以恢复的工作台
+        recorve_w_idx = []  # 记录可以恢复的工作台
         for w_idx, frames in self.can_not_reach_workbenchs.items():
-            self.can_not_reach_workbenchs[w_idx]-=1
+            self.can_not_reach_workbenchs[w_idx] -= 1
             if frames <= 0:
                 recorve_w_idx.append(w_idx)
         # 取消不可达状态
         for w_idx in recorve_w_idx:
             self.can_not_reach_workbenchs.pop(w_idx)
         # sys.stderr.write(f"can_not_reach_workbenchs:{self.can_not_reach_workbenchs}\n")
-
-
