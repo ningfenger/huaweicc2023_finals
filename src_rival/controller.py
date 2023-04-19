@@ -1286,7 +1286,7 @@ class Controller:
                     # 瞄准敌人的方向
 
                     # 获取距离工作台最近的敌人位置
-                    dis_min, rival_loc, theta_rival = self.get_nearst_rival2workbench(idx_robot)
+                    dis_min, rival_loc, rival_r, theta_rival = self.get_nearst_rival2workbench(idx_robot)
 
                     # 本机机器人指向敌人位置的向量
                     vec_robot2rival = np.array(rival_loc) - np.array(robot.loc)
@@ -1315,17 +1315,25 @@ class Controller:
                 # 攻击敌人 金钟罩
 
                 # 获取距离工作台最近的敌人位置
-                dis_min, rival_loc, theta_rival = self.get_nearst_rival2workbench(idx_robot)
+                dis_min, rival_loc, rival_r, theta_rival = self.get_nearst_rival2workbench(idx_robot)
+                if robot.item_type == 0:
+                    my_r = 0.45
+                else:
+                    my_r = 0.53
                 if theta_rival is not None:
                     theta_rival = theta_rival + math.pi
-                    target_loc = np.array(rival_loc) - 0.1 * np.array([np.cos(theta_rival), np.sin(theta_rival)])
+                    offset = 0.2
+
+                    target_loc = np.array(rival_loc) - offset * np.array([np.cos(theta_rival), np.sin(theta_rival)])
                     target_vec = [target_loc[0] - robot.loc[0],
                                   target_loc[1] - robot.loc[1]]
+
+                    dis_target = np.sqrt(np.dot(target_vec, target_vec))
                     target_theta = np.arctan2(
                         target_vec[1], target_vec[0])
                     robot_theta = self.robots[idx_robot].toward
                     delta_theta = target_theta - robot_theta
-                    robot.forward(3)
+                    robot.forward((dis_target - (rival_r + my_r - offset)))
                     robot.rotate(delta_theta * k_r)
 
                 if not self.rivals_on_targets(idx_robot, 30):
@@ -1834,6 +1842,7 @@ class Controller:
         dis_min = 1000
         loc_rival_min = None
         theta_min = None
+        r_min = None
         for rival in self.rival_list:
             # 取出敌人列表 的 坐标
             loc_rival, r = rival
@@ -1844,8 +1853,9 @@ class Controller:
                 dis_min = dis
                 loc_rival_min = loc_rival
                 theta_min = theta
+                r_min = r
         # 不存在距离过近的敌人
-        return dis_min, loc_rival_min, theta_min
+        return dis_min, loc_rival_min, r_min, theta_min
 
 
     def control(self, frame_id: int, money: int):
