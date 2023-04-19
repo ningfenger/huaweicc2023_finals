@@ -1,6 +1,9 @@
 # coding=utf-8
 import copy
 from typing import Optional, List, Tuple
+
+import numpy as np
+
 from tools import *
 
 '''
@@ -18,6 +21,10 @@ class Robot:
     AVOID_CLASH = 5
     BLOCK_OTRHER = 6
 
+    MOV_TO_ATTACK = 0
+    WAIT_TO_ATTACK = 1
+    ATTACK = 2
+    BCK_TO_ATTACK = 3
     def __init__(self, ID: int, loc: Tuple[int]):
         self.ID = ID
         self.loc = copy.deepcopy(loc)
@@ -30,6 +37,7 @@ class Robot:
         self.toward = 0.0  # 朝向
         self.status: int = 0  # 0 空闲, 1 购买途中, 2 等待购买, 3 出售途中, 4 等待出售
         self.move_status: int = 0  # 移动时的状态
+        self.attack_status: int = 0  # 攻击时的状态
         self.target = -1  # 当前机器人的目标控制台 -1代表无目标
         self.__plan = (-1, -1)  # 设定买和卖的目标工作台
         self.target_workbench_list = []  # 可到达的工作台列表
@@ -37,7 +45,6 @@ class Robot:
         self.path = []
         self.block_model = False # 崽种模式
         self.free_frames = 0 # 空闲帧数
-
         # 关于检测机器人对眼死锁的成员变量
         self.pre_position = np.array(list(self.loc))
         self.pre_frame = -1  # 记录上次一帧内移动距离大于min_dis
@@ -54,6 +61,7 @@ class Robot:
         self.frame_reman_sell = 0  # 预计多久能卖任务
         # 路径追踪的临时点
         self.temp_target = None
+        self.temp_target_idx = None  # 记录临时点的下标，用于计算是否转弯点
         self.last_target = -1  # 记录上一个目标，解除死锁用
         self.anoter_robot = -1  # 记录和它冲突的机器人
         self.temp_idx = None
@@ -66,6 +74,7 @@ class Robot:
         self.radar_info_x = None
         self.radar_info_y = None
         self.radar_info_obt = None
+        self.radar_info_rival = None
 
         self.repath_wait = 0
         self.re_path_int = (-1, -1)
@@ -248,19 +257,25 @@ class Robot:
         self.radar_info_obt = np.logical_not(mask)
 
 
-    def avoid_obt(self, t):
+    def avoid_obt(self, t, target_loc, flag_avoid_rival):
         # 评估t秒时是否会碰撞
 
+
+
+        thr_theta = math.pi * 0.4
         # 机器人自身指向目标点的向量
-        vec_robot2target = np.array(self.target_loc) - np.array(self.loc)
+        vec_robot2target = np.array(target_loc) - np.array(self.loc)
+
 
         # 机器人自身指向目标点的角度
         theta_robot2target = np.arctan2(vec_robot2target[1], vec_robot2target[0])
 
         # 机器人自身的速度向量角度
-        theta_velo = np.atan2(self.speed[1], self.speed[0])
+        theta_velo = np.arctan2(self.speed[1], self.speed[0])
 
-        if abs()
+        # 机器人自身的速度向量角度 和 机器人自身指向目标点的向量的夹角 如果大于阈值，说明机器人不会碰撞
+        if abs(theta_robot2target - theta_velo) > thr_theta:
+            return False, 0
 
         # 评估t秒时是否会碰撞
         if self.item_type == 0:
@@ -281,17 +296,42 @@ class Robot:
         min_dis = 200
         for idx_point in range(num_points):
             dis = dis_offset[idx_point]
-            if dis < thr_dis and self.radar_info_obt[idx_point] and dis < min_dis:
-                flag = True
-                potential_theta_id = idx_point
-                min_dis = dis
+            if flag_avoid_rival:
+                if dis < thr_dis and dis < min_dis and (self.radar_info_obt[idx_point] or self.radar_info_rival[idx_point]):
+                    flag = True
+                    potential_theta_id = idx_point
+                    min_dis = dis
+
+            else:
+                if dis < thr_dis and self.radar_info_obt[idx_point] and dis < min_dis:
+                    flag = True
+                    potential_theta_id = idx_point
+                    min_dis = dis
 
         if flag:
             # 有障碍物且距离小于阈值
 
             obt_theta = self.radar_info_theta[potential_theta_id]
             delta_theta = theta_velo - obt_theta
+            if abs(delta_theta) > math.pi / 2:
+                # 不是前方碰撞
+                return False, 0
+
+            # 左右两个候选方向
+            avoid_left = obt_theta + math.pi / 2
+            avoid_right = obt_theta - math.pi / 2
+
+            # 角度的循环取模 计算夹角
+            delta_theta_left = (avoid_left - theta_robot2target + math.pi) % (2 * math.pi) - math.pi
+            delta_theta_right = (avoid_right - theta_robot2target + math.pi) % (2 * math.pi) - math.pi
+
+            # 选择离目标点更近的方向
+            if abs(delta_theta_right) < abs(delta_theta_left):
+                return True, delta_theta_right
+            else:
+                return True, delta_theta_left
 
         else:
             # 无障碍物或距离大于阈值
-            return flag,
+            return False, 0
+

@@ -14,7 +14,7 @@ import workmap
 import tools
 from controller import Controller
 save_file_robot = "F:/huaweicc/src/temp_robot.pkl"
-save_file_controller = "F:/huaweicc/src/temp_controller_bck.pkl"
+save_file_controller = "F:/huaweicc/src/temp_controller.pkl"
 
 def save_robot(data):
     with open(save_file_robot, 'wb') as file:
@@ -53,6 +53,7 @@ def show(idx_robot, controller:Controller):
     print(T2)
     print(T1)
     print((T2-T1) * 1e100)
+    controller.re_path(robot)
     plt.plot(robot.path[:, 0], robot.path[:, 1])
     target_select = controller.select_target(idx_robot)[0]
 
