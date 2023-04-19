@@ -42,7 +42,6 @@ class Robot:
         self.pre_position = np.array(list(self.loc))
         self.pre_frame = -1  # 记录上次一帧内移动距离大于min_dis
         self.pre_toward = 0  # 记录上次一帧内移动距离大于min_dis的角度
-        self.is_deadlock = False  # True if the robot is in a deadlock state
         self.loc_np = np.array(list(self.loc))
         self.is_stuck = False  # True if the robot is stuck with wall
         self.last_status = self.FREE_STATUS  # 用于冲撞避免的恢复 如果是等待购买和等待出售直接设置为购买/出售途中，并重新导航
@@ -168,6 +167,15 @@ class Robot:
 
         return row1
 
+    def dist2path(self):
+        path = np.array(self.path)
+        robot_pos = np.array(self.loc)
+        dists = np.sqrt(np.sum((path - robot_pos) ** 2, axis=1))
+        nearest_row = np.argmin(dists)
+
+
+        return nearest_row
+    
     # 四个动作
     def forward(self, speed: float):
         '''
@@ -235,32 +243,55 @@ class Robot:
         self.radar_info_x = self.radar_info_dis * np.cos(self.radar_info_theta) + self.loc[0]
         self.radar_info_y = self.radar_info_dis * np.sin(self.radar_info_theta) + self.loc[1]
         mask = is_multiple_of_half(self.radar_info_x) & is_multiple_of_half(self.radar_info_y)
+
+        # 取反
         self.radar_info_obt = np.logical_not(mask)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     def avoid_obt(self, t):
         # 评估t秒时是否会碰撞
-        radar_x_offset = self.radar_info_x - t * self.speed[0]
-        radar_y_offset = self.radar_info_y - t * self.speed[1]
+
+        # 机器人自身指向目标点的向量
+        vec_robot2target = np.array(self.target_loc) - np.array(self.loc)
+
+        # 机器人自身指向目标点的角度
+        theta_robot2target = np.arctan2(vec_robot2target[1], vec_robot2target[0])
+
+        # 机器人自身的速度向量角度
+        theta_velo = np.atan2(self.speed[1], self.speed[0])
+
+        if abs()
+
+        # 评估t秒时是否会碰撞
+        if self.item_type == 0:
+            thr_dis = 0.451
+        else:
+            thr_dis = 0.531
 
 
+        # t秒后相对自身的
+        radar_x_offset = self.radar_info_x - t * self.speed[0] - self.loc[0]
+        radar_y_offset = self.radar_info_y - t * self.speed[1] - self.loc[1]
 
+        dis_offset = np.sqrt(radar_x_offset ** 2 + radar_y_offset ** 2)
 
+        num_points = len(dis_offset)
+        flag = False
+        potential_theta_id = -1
+        min_dis = 200
+        for idx_point in range(num_points):
+            dis = dis_offset[idx_point]
+            if dis < thr_dis and self.radar_info_obt[idx_point] and dis < min_dis:
+                flag = True
+                potential_theta_id = idx_point
+                min_dis = dis
+
+        if flag:
+            # 有障碍物且距离小于阈值
+
+            obt_theta = self.radar_info_theta[potential_theta_id]
+            delta_theta = theta_velo - obt_theta
+
+        else:
+            # 无障碍物或距离大于阈值
+            return flag,

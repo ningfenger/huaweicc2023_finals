@@ -9,6 +9,7 @@ import time
 from functools import lru_cache
 from collections import deque
 import sys
+import heapq
 
 '''
 地图类，保存整张地图数据
@@ -29,6 +30,20 @@ class Workmap:
     # TURNS = [(-1, 0), (1, 0), (0, 1), (0, -1)]
     TURNS = list(itertools.product([-1, 0, 1], repeat=2))  # 找路方向，原则: 尽量减少拐弯
     TURNS.remove((0, 0))
+    class Node:
+        def __init__(self, x, y, walkable):
+            self.x = x
+            self.y = y
+            self.walkable = walkable
+
+            self.g = 0  # 起点到该点的距离
+            self.h = 0  # 该点到终点的估计距离
+            self.f = 0  # f = g + h
+
+            self.parent = None  # 父节点
+
+        def __lt__(self, other):
+            return self.f < other.f
 
     def __init__(self, debug=False) -> None:
         self.map_data: List[str] = []  # 原始地图信息
@@ -341,10 +356,10 @@ class Workmap:
                         visited_workbench.append(
                             workbenchs_loc[(n_x, n_y)])  # 将这个工作台添加到列表
                     visited_loc[n_x][n_y] = True
-                    if flag1 and x!=0 and y!=0 and (n_x,n_y) in self.broad_shifting:
-                        if self.map_gray[i-x][j+y]==self.BLOCK and (i+2*x<0 or i+2*x>99 or  self.map_gray[i+2*x][j]==self.BLOCK):
+                    if flag1 and x != 0 and y != 0 and (n_x, n_y) in self.broad_shifting:
+                        if self.map_gray[i-x][j+y] == self.BLOCK and (i+2*x < 0 or i+2*x > 99 or self.map_gray[i+2*x][j] == self.BLOCK):
                             continue
-                        if self.map_gray[i+x][j-y]==self.BLOCK and (j+2*y<0 or j+2*y>99 or  self.map_gray[i][j+2*y]==self.BLOCK):
+                        if self.map_gray[i+x][j-y] == self.BLOCK and (j+2*y < 0 or j+2*y > 99 or self.map_gray[i][j+2*y] == self.BLOCK):
                             continue
                     if self.map_gray[n_x][n_y] >= self.BROAD_ROAD:
                         dq.append((n_x, n_y))
@@ -398,6 +413,8 @@ class Workmap:
                     if next_x < 0 or next_y < 0 or next_x >= 100 or next_y >= 100 or self.map_gray[next_x][
                             next_y] < low_value:
                         continue
+
+                    # 防止在特殊宽路处卡死
                     if broad_road and flag1 and i != 0 and j != 0 and (next_x, next_y) in self.broad_shifting:
                         if self.map_gray[node_x-i][node_y+j] == self.BLOCK and (node_x+2*i < 0 or node_x+2*i > 99 or self.map_gray[node_x+2*i][node_y] == self.BLOCK):
                             continue
@@ -442,12 +459,107 @@ class Workmap:
                 self.gen_a_path(idx, loc, blue_flag, False)
                 self.gen_a_path(idx, loc, blue_flag, True)
 
+    # 定义 A* 算法搜索函数
+    def astar_search(self, graph, start, end, low_value):
+        # 定义开放和关闭列表
+        open_list = []
+        closed_list = set()
+
+        # 添加起点
+        heapq.heappush(open_list, (start.f, start))
+
+        while open_list:
+            # 取出 f 值最小的节点
+            current = heapq.heappop(open_list)[1]
+
+            # 将当前节点加入关闭列表
+            closed_list.add(current)
+
+            if current.x == end.x and current.y == end.y:
+                # 找到终点，返回路径
+                path = []
+                while current:
+                    path.append((current.x, current.y))
+                    current = current.parent
+                return path[::-1]
+
+            for dx, dy in self.TURNS:
+                x, y = current.x + dx, current.y + dy
+
+                # 节点越界或不可通过，跳过
+                if x < 0 or x >= len(graph) or y < 0 or y >= len(graph[0]) or not graph[x][y]<low_value:
+                    continue
+
+                neighbor = self.Node(x,y,True)
+
+                # 如果 neighbor 早已在关闭列表中，跳过
+                if neighbor in closed_list:
+                    continue
+
+                # 新的距离
+                new_g = current.g + 1
+
+                # 如果 neighbor 不在开放列表中，或距离更远
+                if neighbor not in [x[1] for x in open_list] or new_g < neighbor.g:
+                    # 更新或添加到开放列表
+                    neighbor.g = new_g
+                    neighbor.h = abs(end.x-neighbor.x)+abs(end.y-neighbor.y) 
+                    neighbor.f = neighbor.g + neighbor.h
+                    neighbor.parent = current
+                    heapq.heappush(open_list, (neighbor.f, neighbor))
+
+        # 没有找到路径
+        return None
+    
+    def get_a_new_way(self, wait_flaot_loc, target_loc, robots_loc, broad_road=False, max_walk=50):
+        '''
+        为机器人规划一条避开现有障碍的新路
+        wait_flaot_loc: 要避让的机器人坐标
+        target_loc: 目标工作台坐标
+        robots_loc: 其他机器人坐标, 可以考虑添加敌方的坐标
+        broad_road: 是否只能走宽路, 根据机器人手中是否 持有物品确定
+        max_walk: 最多走多少步，超过指定步数直接返回空
+        return: 返回路径, 为空说明无法避让
+        '''
+        if broad_road:
+            low_value = self.BROAD_ROAD
+        else:
+            low_value = self.ROAD
+        node_x, node_y = self.loc_float2int(*wait_flaot_loc)
+        tmp_map_gray = copy.deepcopy(self.map_gray) # 拷贝地图
+        for robot_loc in robots_loc:
+            # 更新了机器人涂黑方式, 先算机器人一圈的浮点值再转为int涂黑
+            # + [(0, 2), (0, -2), (-2, 0), (2, 0)]
+            block_turns = self.TURNS + [(0, 0)]
+            for x, y in block_turns:
+                block_x, block_y = self.loc_float2int(
+                    robot_loc[0]+x*0.5, robot_loc[1]+y*0.5)
+                if block_x < 0 or block_x > 99 or block_y < 0 or block_y > 99:
+                    continue
+                tmp_map_gray[block_x][block_y] = self.BLOCK
+        
+        target_x, target_y = self.loc_float2int(*target_loc)
+        # 工作台被人赌了，只能撞了
+        if tmp_map_gray[target_x][target_y] == self.BLOCK:
+            return []
+        # 开始A*
+        start = self.Node(node_x, node_y, True)
+        start.h = abs(target_x-start.x)+abs(target_y-start.y)
+        path = self.astar_search(tmp_map_gray, start, self.Node(target_x, target_y, True), low_value)
+        if not path:
+            return None
+        for i in range(len(path)-1):
+            x,y = path[i]
+            path[i]=self.loc_int2float(x,y, self.map_gray[x][y] == self.ROAD)
+        path[-1] = self.loc_int2float_normal(*path[-1])
+        return path[-1]
+
     def get_avoid_path(self, wait_flaot_loc, work_path, robots_loc, broad_road=False, safe_dis: float = None):
         '''
         为机器人规划一条避让路径, 注意此函数会临时修改map_gray如果后续有多线程优化, 请修改此函数
         wait_flaot_loc: 要避让的机器人坐标
         work_path: 正常行驶的机器人路径
-        robots_loc: 其他机器人坐标
+        robots_loc: 其他机器人坐标, 可以考虑添加敌方的坐标
         broad_road: 是否只能走宽路, 根据机器人手中是否 持有物品确定
         return: 返回路径, 为空说明无法避让
         '''
@@ -462,16 +574,16 @@ class Workmap:
             low_value = self.BROAD_ROAD
         else:
             low_value = self.ROAD
-            low_value = self.BROAD_ROAD
         node_x, node_y = self.loc_float2int(*wait_flaot_loc)
         tmp_blocks = {}  # 将其他机器人及其一圈看做临时障碍物
         path_map = {(node_x, node_y): (node_x, node_y)}  # 记录路径
         for robot_loc in robots_loc:
-            robot_x, robot_y = self.loc_float2int(*robot_loc)
+            # 更新了机器人涂黑方式, 先算机器人一圈的浮点值再转为int涂黑
             # + [(0, 2), (0, -2), (-2, 0), (2, 0)]
             block_turns = self.TURNS + [(0, 0)]
             for x, y in block_turns:
-                block_x, block_y = robot_x + x, robot_y + y
+                block_x, block_y = self.loc_float2int(
+                    robot_loc[0]+x*0.5, robot_loc[1]+y*0.5)
                 if block_x < 0 or block_x > 99 or block_y < 0 or block_y > 99:
                     continue
                 # 暂存原来的值，方便改回去
@@ -530,6 +642,9 @@ class Workmap:
         else:  # 如果不指定走宽路，则优先走宽路
             path = self.get_better_path(float_loc, workbench_ID, blue)
         if not path:
+            # loc = self.loc_float2int(*float_loc)
+            # de的时候再看一下 目标工作台ID和阵营。。。
+            # sys.stderr.write(f'loc: {loc} broad {self.map_gray[loc[0]][loc[1]]}\n')
             return path
         for i in range(len(path) - 1):
             x, y = path[i]
@@ -574,7 +689,14 @@ class Workmap:
             target_map = buy_map[workbench_ID]
         node_x, node_y = self.loc_float2int(*float_loc)
         if not target_map[node_x][node_y]:
+            # 按照距离排序, 优先选择距离最近的点重新规划
+            dis = {}
             for x, y in self.TURNS:
+                float_x, float_y = self.loc_int2float_normal(
+                    node_x + x, node_y + y)
+                dis[(x, y)] = (float_loc[0]-float_x)**2 + \
+                    (float_loc[1]-float_y)**2
+            for x, y in sorted(self.TURNS, key=lambda x: dis[x]):
                 test_x, test_y = node_x + x, node_y + y
                 if test_x < 0 or test_x > 99 or test_y < 0 or test_y > 99:
                     continue
