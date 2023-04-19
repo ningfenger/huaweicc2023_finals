@@ -25,6 +25,8 @@ class Workbench:
         sum([1 << i for i in (4, 6)]):5,
         sum([1 << i for i in (5, 6)]):4,
     }
+    MAX_ATTCK_VALUE = 500 # 最大可攻击价值
+    ATTCK_VALUE = 10 # 每次攻击成功的奖励
 
     def __init__(self, ID: int, typeID: int, loc: Tuple[float]):
         self.ID = ID  # 编号
@@ -38,6 +40,7 @@ class Workbench:
         self.target_workbench_list = []  # 收购此工作台的产品且可到达的工作台列表
         self.buy_price = self.ITEMS_BUY[self.typeID] if self.typeID < len(self.ITEMS_BUY) else 0  # 进价  
         self.sell_price = self.ITEMS_SELL[self.typeID] if self.typeID < len(self.ITEMS_SELL) else 0  # 售价
+        self.attack_value = 0 # 被进攻的价值
             
 
     def get_materials_num(self):  # 返回已被占用的格子数目

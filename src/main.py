@@ -35,6 +35,11 @@ if __name__ == '__main__':
     for (i,j), idx in workmap.get_robots(blue_flag).items():
         loc = workmap.loc_int2float_normal(i,j)
         robots[idx] = Robot(idx, loc)
+    # 敌方机器人对象列表
+    rival_robots = [None]*4
+    for (i,j), idx in workmap.get_robots(not blue_flag).items():
+        loc = workmap.loc_int2float_normal(i,j)
+        rival_robots[idx] = Robot(idx, loc)
     # 我方工作台对象列表
     workbenchs = [None]*len(workmap.get_workbenchs(blue_flag))
     for (i,j), (wb_type, idx) in workmap.get_workbenchs(blue_flag).items():
@@ -56,9 +61,17 @@ if __name__ == '__main__':
         robots[idx].anoter_workbench_list = r2w_another
     for idx, w2w in enumerate(workmap.workbench2workbench(blue_flag)):
         workbenchs[idx].target_workbench_list = w2w
+    
+    rival_r2ws, _ = workmap.robot2workbench(not blue_flag)
+    # 敌方机器人可达的工作台
+    for idx, rival_r2w in enumerate(rival_r2ws):
+        rival_robots[idx].target_workbench_list = rival_r2w
+    # 敌方工作台可达的工作台
+    for idx, rival_w2w in enumerate(workmap.workbench2workbench(not blue_flag)):
+        rival_workbenchs[idx].target_workbench_list = rival_w2w
     # 计算一下路径
     workmap.gen_paths()
-    controller = Controller(robots, workbenchs, rival_workbenchs, workmap, blue_flag)
+    controller = Controller(robots, rival_robots, workbenchs, rival_workbenchs, workmap, blue_flag)
     # controller.init_workbench_other()
     # controller.attack_all()
     try:
