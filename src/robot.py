@@ -68,6 +68,8 @@ class Robot:
         self.radar_info_y = None
         self.radar_info_obt = None
 
+        self.repath_wait = 0
+        self.re_path_int = (-1, -1)
     def get_frame_reman(self):
         '''
         预计还需要多久可以完成当前任务, 与状态有关
@@ -225,6 +227,7 @@ class Robot:
         '''
         根据判题器的输入更新机器人的雷达数据, 记得更新status
         '''
+
         s = s.split()
         float_list = [float(str_item) for str_item in s]
         self.radar_info_theta = np.arange(0, 2*math.pi, math.pi / 180) + self.toward
@@ -233,3 +236,31 @@ class Robot:
         self.radar_info_y = self.radar_info_dis * np.sin(self.radar_info_theta) + self.loc[1]
         mask = is_multiple_of_half(self.radar_info_x) & is_multiple_of_half(self.radar_info_y)
         self.radar_info_obt = np.logical_not(mask)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def avoid_obt(self, t):
+        # 评估t秒时是否会碰撞
+        radar_x_offset = self.radar_info_x - t * self.speed[0]
+        radar_y_offset = self.radar_info_y - t * self.speed[1]
+
+
+
+

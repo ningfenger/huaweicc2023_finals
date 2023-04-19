@@ -14,7 +14,7 @@ import workmap
 import tools
 from controller import Controller
 save_file_robot = "F:/huaweicc/src/temp_robot.pkl"
-save_file_controller = "F:/huaweicc/src/temp_controller.pkl"
+save_file_controller = "F:/huaweicc/src/temp_controller_bck.pkl"
 
 def save_robot(data):
     with open(save_file_robot, 'wb') as file:
@@ -39,19 +39,24 @@ def show(idx_robot, controller:Controller):
     robot = controller.robots[idx_robot]
     fig = plt.figure(figsize=(20, 16))
     plt.imshow(controller.m_map.map_gray[::-1], origin='lower', extent=[0, 50, 0, 50])
-    plt.plot(robot.path[:, 0], robot.path[:, 1])
+
     plt.plot(robot.loc[0], robot.loc[1], 'o')
     radar_x = robot.radar_info_x
     radar_y = robot.radar_info_y
 
     plt.plot(radar_x, radar_y)
 
-    plt.plot(robot.temp_target[0], robot.temp_target[1], 'b*')
-
+    import time
+    T1 = time.time()
     controller.re_path(robot)
-    target_select = controller.select_target(1)[0]
+    T2 = time.time()
+    print(T2)
+    print(T1)
+    print((T2-T1) * 1e100)
+    plt.plot(robot.path[:, 0], robot.path[:, 1])
+    target_select = controller.select_target(idx_robot)[0]
 
-    plt.plot(target_select[0], target_select[1], 'g*')
+    plt.plot(target_select[0], target_select[1], 'g*', markersize=15)
     plt.show()
     pass
 
@@ -96,7 +101,7 @@ if __name__ == '__main__':
     # map.read_map_directly('F:/huaweicc/maps/1.txt')
     # map.draw_map()
     controller = load_controller()
-    show(1, controller)
+    show(2, controller)
     show2(controller)
     a=11111111111111
     pass

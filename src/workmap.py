@@ -70,8 +70,8 @@ class Workmap:
         '''
         x, y = self.loc_int2float_normal(i, j)
         if rode:
-            x += 0.25
-            y -= 0.25
+            x += 0.249
+            y -= 0.249
         elif (i, j) in self.broad_shifting:
             # 特殊宽路
             shifting = self.broad_shifting[(i, j)]
@@ -178,12 +178,12 @@ class Workmap:
                         self.map_gray[i][j] = self.BROAD_ROAD
                         # 要根据具体情况加偏移量
                         if self.map_gray[i - 2 * x][j - y] == self.BLOCK:
-                            self.broad_shifting[(i, j)] = (0, x * 0.25)
+                            self.broad_shifting[(i, j)] = (0, x * 0.249)
                         elif self.map_gray[j - 2 * x][i - y] == self.BLOCK:
-                            self.broad_shifting[(i, j)] = (-y * 0.25, 0)
+                            self.broad_shifting[(i, j)] = (-y * 0.249, 0)
                         else:
                             # 往远离的方向推
-                            self.broad_shifting[(i, j)] = (-y * 0.25, x * 0.25)
+                            self.broad_shifting[(i, j)] = (-y * 0.249, x * 0.249)
 
         # 再算窄路
         for i in range(100):

@@ -13,7 +13,7 @@ import robot
 import workmap
 from controller import Controller
 save_file_robot = "F:/huaweicc/src/temp_robot.pkl"
-save_file_controller = "F:/huaweicc/src/temp_controller.pkl"
+save_file_controller = "/src/temp_controller_bck.pkl"
 
 def save_robot(data):
     with open(save_file_robot, 'wb') as file:
