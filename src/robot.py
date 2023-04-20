@@ -64,6 +64,9 @@ class Robot:
         # 路径追踪的临时点
         self.target_loc = None
         self.target_idx = None  # 记录临时点的下标，用于计算是否转弯点
+        self.dog_chain = None  # 记录移动时顺便撞击敌方的参考位置 反复冲撞需要在此范围内 因此可能无需状态记录
+        self.bck_reRun = None  # 记录反复冲撞的参考位置
+        self.bck_reRun_status = None  # 记录反复冲撞的状态，包含冲撞与回退
         self.last_target = -1  # 记录上一个目标，解除死锁用
         self.anoter_robot = -1  # 记录和它冲突的机器人
         self.temp_idx = None
