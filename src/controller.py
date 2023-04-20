@@ -1618,9 +1618,10 @@ class Controller:
         # flag：True 有障碍物 False 无障碍物
         # theta_avoid_obt：避让障碍物的角度 偏移角度
         # try:
-        flag_avoid_obt, d_theta_avoid_obt = robot.avoid_obt(t=0.5, target_loc=target_loc,
-                                                            flag_avoid_rival=flag_avoid_rival)
+        # flag_avoid_obt, d_theta_avoid_obt = robot.avoid_obt(t=0.5, target_loc=target_loc,
+                                                            # flag_avoid_rival=flag_avoid_rival)
         flag_avoid_obt = False
+        d_theta_avoid_obt = 0
         # except:
         #     import debug
         #     debug.save_controller(self)
