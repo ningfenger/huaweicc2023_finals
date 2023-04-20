@@ -62,8 +62,8 @@ class Robot:
         self.frame_reman_buy = 0  # 预计多久能买任务
         self.frame_reman_sell = 0  # 预计多久能卖任务
         # 路径追踪的临时点
-        self.temp_target = None
-        self.temp_target_idx = None  # 记录临时点的下标，用于计算是否转弯点
+        self.target_loc = None
+        self.target_idx = None  # 记录临时点的下标，用于计算是否转弯点
         self.last_target = -1  # 记录上一个目标，解除死锁用
         self.anoter_robot = -1  # 记录和它冲突的机器人
         self.temp_idx = None
@@ -133,7 +133,7 @@ class Robot:
         :return:
         '''
         self.path = np.array(path)
-        self.temp_target = None
+        self.target_loc = None
 
     def get_buy(self) -> int:
         '''
@@ -267,8 +267,6 @@ class Robot:
 
     def avoid_obt(self, t, target_loc, flag_avoid_rival):
         # 评估t秒时是否会碰撞
-
-
 
         thr_theta = math.pi * 0.4
         # 机器人自身指向目标点的向量
