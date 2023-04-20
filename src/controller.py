@@ -748,6 +748,7 @@ class Controller:
         #     return False
 
     def obt_detect(self, loc0, loc1):
+        # 和could_run 区别在于只检测是否为障碍物
         # 位置0到位置1区间是否有符合要求
 
         # loc0→loc1的距离
@@ -916,6 +917,240 @@ class Controller:
         # 修正结束
 
         return target_point, idx_point
+
+    def obt_detect(self, loc0, loc1):
+        # 位置0到位置1区间是否有符合要求
+
+        # loc0→loc1的距离
+        dis = np.sqrt(np.sum((loc1 - loc0) ** 2))
+
+        # loc0→loc1的方向
+        theta = np.arctan2(loc1[1] - loc0[1], loc1[0] - loc0[0])
+
+        # loc0所处的格子
+
+        raw, col = int(loc0[1] // 0.5), int(loc0[0] // 0.5)
+
+        max_num = np.ceil(dis / 0.5)
+        # 取出所有边界点
+        if theta == 0:
+            # 正右
+            x_set_all = np.arange(
+                col + 1, min(col + max_num + 1, 101), 1) * 0.5
+            y_set_all = np.ones_like(x_set_all) * loc0[1]
+        elif theta == math.pi / 2:
+            # 正上
+            y_set_all = np.arange(
+                raw + 1, min(raw + max_num + 1, 101), 1) * 0.5
+            x_set_all = np.ones_like(y_set_all) * loc0[0]
+        elif theta == math.pi:
+            # 正左
+            x_set_all = np.arange(col, max(col - max_num - 1, -1), -1) * 0.5
+            y_set_all = np.ones_like(x_set_all) * loc0[1]
+        elif theta == -math.pi / 2:
+            # 正下
+            y_set_all = np.arange(raw, max(raw - max_num - 1, -1), -1) * 0.5
+            x_set_all = np.ones_like(y_set_all) * loc0[0]
+        else:
+            # 其他方向
+
+            # x方向栅格点集
+            if -math.pi / 2 < theta < math.pi / 2:
+                # 1 4 象限
+                x_set_xgrid = np.arange(
+                    col + 1, min(col + max_num + 1, 101), 1) * 0.5
+            else:
+                # 2 3 象限
+                x_set_xgrid = np.arange(
+                    col, max(col - max_num - 1, -1), -1) * 0.5
+            y_set_xgrid = np.tan(theta) * (x_set_xgrid - loc0[0]) + loc0[1]
+
+            # y方向栅格点集
+            if 0 < theta < math.pi:
+                # 1 2 象限
+                y_set_ygrid = np.arange(
+                    raw + 1, min(raw + max_num + 1, 101), 1) * 0.5
+
+            else:
+                # 3 4 象限
+                y_set_ygrid = np.arange(
+                    raw, max(raw - max_num - 1, -1), -1) * 0.5
+            x_set_ygrid = 1 / np.tan(theta) * \
+                          (y_set_ygrid - loc0[1]) + loc0[0]
+            x_set_all = np.concatenate((x_set_xgrid, x_set_ygrid))
+            y_set_all = np.concatenate((y_set_xgrid, y_set_ygrid))
+
+            # 得到排序后的索引
+            idx = np.argsort(y_set_all)
+            # 将坐标按照排序后的索引进行排序
+            if theta < 0:
+                x_set_all = x_set_all[idx]
+                y_set_all = y_set_all[idx]
+            else:
+                x_set_all = x_set_all[idx[::-1]]
+                y_set_all = y_set_all[idx[::-1]]
+
+        # 取出所有边界点↑
+        x_set_near = x_set_all[:-1]
+        x_set_far = x_set_all[1:]
+
+        y_set_near = y_set_all[:-1]
+        y_set_far = y_set_all[1:]
+
+        x_set_mid = (x_set_near + x_set_far) / 2
+        y_set_mid = (y_set_near + y_set_far) / 2
+
+        dis_set = np.sqrt(
+            (x_set_near - loc0[0]) ** 2 + (y_set_near - loc0[1]) ** 2)
+        mask = np.zeros_like(x_set_mid, dtype=bool)
+        mask[dis_set <= dis] = True
+        x_set_mid = x_set_mid[mask]
+        y_set_mid = y_set_mid[mask]
+        idx_ob = -1
+        for i_point in range(len(x_set_mid)):
+            x = x_set_mid[i_point]
+            y = y_set_mid[i_point]
+            raw, col = tools.cor2rc(x, y)
+            if raw <= -1 or raw >= 100 or col <= -1 or col >= 100 or self.m_map_arr[raw, col] == 0:
+                return False
+        return True
+
+
+    def select_target_4(self, idx_robot):
+        # 4条线
+
+        # 取出机器人
+        robot = self.robots[idx_robot]
+
+        # 取出机器人坐标 质心
+        robot_loc_m = np.array(robot.loc).copy()
+
+        # 取出目标点坐标
+        path_loc_m = robot.path.copy()
+
+        # 计算机器人到目标点的向量
+        vec_r2p = robot_loc_m - path_loc_m
+
+        # 计算机器人到目标点的距离
+        dis_r2p = np.sqrt(np.sum(vec_r2p ** 2, axis=1))
+
+        # 选取距离小于40 大于0.3的mask
+        mask_greater = dis_r2p < 40
+        mask_smaller = 0.3 < dis_r2p
+        mask = mask_greater & mask_smaller
+
+        # 选取距离小于40 大于0.3的点
+        path_loc_m = path_loc_m[mask]
+
+        # 判断是否携带物品，并计算相应半径
+        if self.robots[idx_robot].item_type == 0:
+            carry_flag = False
+            width = 0.46
+        else:
+            carry_flag = True
+            width = 0.54
+
+        # robot_loc_m 指向各个点的方向
+        theta_set = np.arctan2(
+            path_loc_m[:, 1] - robot_loc_m[1], path_loc_m[:, 0] - robot_loc_m[0]).reshape(-1, 1)
+
+        # 方向左旋90度
+        theta_l_set = theta_set + math.pi / 2
+
+        # 方向右旋90度
+        theta_r_set = theta_set - math.pi / 2
+
+        # 计算左右两边的点 4个点把宽度3等分
+        robot_loc_l1 = robot_loc_m + 1 / 3 * width * \
+                       np.concatenate((np.cos(theta_l_set), np.sin(theta_l_set)), axis=1)
+        robot_loc_l2 = robot_loc_m + width * \
+                       np.concatenate((np.cos(theta_l_set), np.sin(theta_l_set)), axis=1)
+        robot_loc_r1 = robot_loc_m + 1 / 3 * width * \
+                       np.concatenate((np.cos(theta_r_set), np.sin(theta_r_set)), axis=1)
+        robot_loc_r2 = robot_loc_m + width * \
+                       np.concatenate((np.cos(theta_r_set), np.sin(theta_r_set)), axis=1)
+
+        path_loc_l1 = path_loc_m + 1 / 3 * width * \
+                      np.concatenate((np.cos(theta_l_set), np.sin(theta_l_set)), axis=1)
+        path_loc_l2 = path_loc_m + width * \
+                      np.concatenate((np.cos(theta_l_set), np.sin(theta_l_set)), axis=1)
+        path_loc_r1 = path_loc_m + 1 / 3 * width * \
+                      np.concatenate((np.cos(theta_r_set), np.sin(theta_r_set)), axis=1)
+        path_loc_r2 = path_loc_m + width * \
+                      np.concatenate((np.cos(theta_r_set), np.sin(theta_r_set)), axis=1)
+        len_path = path_loc_m.shape[0]
+
+        detect_l1 = np.full(len_path, False)
+        detect_l2 = np.full(len_path, False)
+        detect_r1 = np.full(len_path, False)
+        detect_r2 = np.full(len_path, False)
+
+        for idx_point in range(len_path):
+            # 共4条线的判断
+            loc0 = robot_loc_l1[idx_point, :]
+            loc1 = path_loc_l1[idx_point, :]
+            detect_l1[idx_point] = self.obt_detect(loc0, loc1)
+
+            loc0 = robot_loc_l2[idx_point, :]
+            loc1 = path_loc_l2[idx_point, :]
+            detect_l2[idx_point] = self.obt_detect(loc0, loc1)
+
+            loc0 = robot_loc_r1[idx_point, :]
+            loc1 = path_loc_r1[idx_point, :]
+            detect_r1[idx_point] = self.obt_detect(loc0, loc1)
+
+            loc0 = robot_loc_r2[idx_point, :]
+            loc1 = path_loc_r2[idx_point, :]
+            detect_r2[idx_point] = self.obt_detect(loc0, loc1)
+
+
+        detect_all = detect_l1 & detect_l2 & detect_r1 & detect_r2
+        detect_m = detect_l1 | detect_r1
+
+        if detect_all.any():
+            m_index = np.where(detect_all)[0]
+            idx_target = m_index[len(m_index) - 1]
+            target_point = path_loc_m[idx_target, :]
+            idx_point = np.where(mask)[0][idx_target]
+        # elif detect_2.any():
+        #     m_index = np.where(detect_2)[0]
+        #     idx_target = m_index[len(m_index) - 1]
+        #     target_point = path_loc_m[idx_target, :]
+        #     idx_point = np.where(mask)[0][idx_target]
+        else:
+            idx_target = robot.find_temp_tar_idx()
+            target_point = robot.path[idx_target, :]
+            idx_point = idx_target
+        # ,
+        # 修正select导致在墙角导致回头的现象：
+        # 如果机器人已经选中的点下一个点并接近选中点的下一个点
+        # 强条件修正
+        if idx_point < len(robot.path) - 1:
+            # 取出机器人坐标
+            point_robot = np.array(robot.loc)
+
+            # 取出当前点
+            target_point_this = robot.path[idx_target, :]
+
+            # 取出下一个点
+            target_point_next = robot.path[idx_target + 1, :]
+
+            # 下一个点和当前点的距离
+            dis_this2next = np.sqrt(np.sum((target_point_next - target_point_this) ** 2))
+
+            # 下一个点和机器人的距离
+            dis_robot2next = np.sqrt(np.sum((target_point_next - point_robot) ** 2))
+
+            if dis_robot2next < dis_this2next:
+                # 如果下一个点和机器人的距离小于当前点和下一个点的距离
+                # 则将下一个点作为目标点
+                target_point = target_point_next
+                idx_point = idx_target + 1
+
+        # 修正结束
+
+        return target_point, idx_point
+
 
     def get_other_col_info2(self, idx_robot, idx_other, t_max=0.3):
         # 返回t_max时间内 最短质心距离
@@ -1224,7 +1459,7 @@ class Controller:
         # True 周围无障碍物 False 周围有障碍物
         flag_obt_near = self.obt_near(robot)
         if flag_obt_near:
-            target_loc, target_idx = self.select_target(idx_robot)
+            target_loc, target_idx = self.select_target_4(idx_robot)
         else:
             target_idx = robot.find_temp_tar_idx()
             target_loc = robot.path[target_idx, :]
