@@ -401,10 +401,14 @@ class Controller:
         r_loc = self.robots[idx_robot].loc
         return np.sqrt((r_loc[0] - w_loc[0]) ** 2 + (r_loc[1] - w_loc[1]) ** 2)
 
-    def re_mession(self, robot: Robot):
+    def re_mession(self, robot: Robot, frame_wait = 0):
         '''
         当机器人长期无法完成任务时，尝试切换机器人状态
         '''
+        if frame_wait > 0:
+            # 超时死锁处理，倒车几帧
+            robot.frame_wait = frame_wait
+            robot.backword_speed = -2
         robot.frame_reman_buy = 0
         robot.frame_reman_sell = 0
         sell_idx = robot.get_sell()
@@ -2164,8 +2168,10 @@ class Controller:
             self.tmp_avoid.clear()
             robot.update_frame_reman()
             # 严重超时, 重新规划, 对手里有东西的稍微宽容一点
-            if robot.get_frame_reman() < self.MAX_TIME_OUT * (1 if robot.item_type == 0 else 1.5) and robot.is_stuck:
-                self.re_mession(robot)
+            if robot.status in [Robot.MOVE_TO_BUY_STATUS, Robot.MOVE_TO_SELL_STATUS]:
+                move_reman = self.MOVE_SPEED*len(self.m_map.get_path(robot.loc, robot.target, self.blue_flag, robot.item_type > 0)) # 预估到达时间
+                if robot.get_frame_reman() - move_reman < self.MAX_TIME_OUT * (1 if robot.item_type == 0 else 1.5): # and robot.is_stuck:
+                    self.re_mession(robot, self.AVOID_FRAME_WAIT)
             idx_robot += 1
         for idx_robot in sell_out_list:
             robot = self.robots[idx_robot]
