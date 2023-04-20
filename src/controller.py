@@ -62,6 +62,13 @@ class Controller:
     MAP_TYPE_3V1 = 2  # 相对开阔的地形，各自的资源点都比较丰富，地图被分割为两个不连通区域，其中一个区域为红色基地，只有红色工作台，机器人初始为3红1蓝，另一个区域为蓝色基地，只有蓝色工作台，机器人初始为3蓝1红。
     MAP_TYPE_NARROW = 3  # 相对狭窄的地形，双方有各自独立基地，基地之间存在多条路径连通，并且基地外部存在一些分散的红蓝工作台可使用。
     MAP_TYPE_4V4 = 4 # 极为开阔的地形，整张地图完全没有蓝色工作台，只有红色工作台，且红色工作台点比较丰富。
+
+    # 攻击策略，优先攻击的工作台类型
+    ATTACK_TYPE_ORDER = {
+        1:1, 2:1, 3:1,
+        4:4, 5:4, 6:4,
+        7:3, 8:2, 9:2,
+    }
     
     def __init__(self, robots: List[Robot], rival_robots: List[Robot], workbenchs: List[Workbench], rival_workbenchs: List[Workbench], m_map: Workmap, blue_flag: bool):
         self.robots = robots
@@ -234,9 +241,18 @@ class Controller:
         def cmp_final(idx1, idx2):
             type_ID1 = self.rival_workbenchs[idx1].typeID
             type_ID2 = self.rival_workbenchs[idx2].typeID
+            # 优先看类型大类
+            if self.ATTACK_TYPE_ORDER[type_ID1] > self.ATTACK_TYPE_ORDER[type_ID2]:
+                return -1
+            elif self.ATTACK_TYPE_ORDER[type_ID1] < self.ATTACK_TYPE_ORDER[type_ID2]:
+                return 1
+            # 之后看具体类型的评价
             if type_score[type_ID1] > type_score[type_ID2]:
                 return -1
-            elif arrive_score[idx1] > arrive_score[idx2]:
+            elif type_score[type_ID1] < type_score[type_ID2]:
+                return 1
+            # 之后看访问到的顺序
+            if arrive_score[idx1] > arrive_score[idx2]:
                 return -1
             return 1
         other_workbenchs_list = set()
