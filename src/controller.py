@@ -1590,7 +1590,7 @@ class Controller:
 
         # 控制参数：
         k_r = 8  # 定位旋转时的比例控制系数
-        k_f = 8  # 定位前进时的比例控制系数
+        k_f = 3  # 定位前进时的比例控制系数
         thr_near_target = 5  # 小于此角度不避让对方机器人
 
         #  取出机器人的引用
@@ -1641,12 +1641,14 @@ class Controller:
             # 干扰敌人的机器人
             if robot.attack_status == Robot.MOV_TO_ATTACK:
                 # 前往干扰工作台的路上
-                if self.target_slow(idx_robot, target_idx, target_loc, col_flag, sb_flag, sb_safe_dis):
+                if abs(delta_theta) > math.pi / 6:
+                    # 角度相差较大 原地转向
+                    robot.forward(0)
+                elif self.target_slow(idx_robot, target_idx, target_loc, col_flag, sb_flag, sb_safe_dis):
                     # 慢速行驶至目标
-                    robot.forward(dis_target * k_r)
+                    robot.forward(dis_target * k_f)
                 else:
                     # 高速行驶至目标
-
                     robot.forward(9)
 
                 robot.rotate(delta_theta * k_r)
@@ -1720,7 +1722,7 @@ class Controller:
                 # 回防工作台的路上
                 if self.target_slow(idx_robot, target_idx, target_loc, col_flag, sb_flag, sb_safe_dis):
                     # 慢速行驶至目标
-                    robot.forward(dis_target * k_r)
+                    robot.forward(dis_target * k_f)
                 else:
                     # 高速行驶至目标
 
@@ -1757,6 +1759,8 @@ class Controller:
             if abs(delta_theta) > math.pi / 6:
                 # 角度相差较大 原地转向
                 robot.forward(0)
+
+
 
             robot.rotate(delta_theta * k_r)
 
@@ -2247,9 +2251,12 @@ class Controller:
             robot_status = robot.status
             if robot_status == Robot.FREE_STATUS:
                 # 判断是否出现了因跳帧导致的出售失败, 不太对, 预售预购的处理
-                # if robot.item_type != 0:
-                #     robot.status = Robot.MOVE_TO_SELL_STATUS
-                #     continue
+                if robot.item_type != 0:
+                    robot.status = Robot.MOVE_TO_SELL_STATUS
+                    # 重新预售，有极低概率出问题，重复预售
+                    workbench_sell = self.workbenchs[robot.get_sell()]
+                    workbench_sell.pro_sell(robot.item_type)
+                    continue
                 # 【空闲】执行调度策略
                 if self.choise(frame_id, robot):
                     # 设置机器人移动目标
@@ -2311,7 +2318,7 @@ class Controller:
                             robot.status = Robot.MOVE_TO_SELL_STATUS  # 切换为 【出售途中】
                         robot.set_path(self.m_map.get_float_path(
                             robot.loc, idx_workbench_to_sell, self.blue_flag, True))
-                        continue
+                        # continue
                     else:
                         robot.status = Robot.MOVE_TO_BUY_STATUS
                         robot.set_path(self.m_map.get_float_path(
@@ -2319,10 +2326,11 @@ class Controller:
                         continue
             elif robot_status == Robot.MOVE_TO_SELL_STATUS:
                 # 【出售途中】
-                # 判断是否出现了因跳帧导致的购买失败
-                # if robot.item_type == 0:
-                #     robot.status = Robot.MOVE_TO_BUY_STATUS
-                #     continue
+                # 判断是否出现了因跳帧导致的购买失败，有极低的概率重复预购
+                if robot.item_type == 0:
+                    robot.status = Robot.MOVE_TO_BUY_STATUS
+                    self.workbenchs[robot.get_buy()].pro_buy()
+                    continue
                 # 移动
                 self.move(idx_robot)
                 # 判断距离是否够近
