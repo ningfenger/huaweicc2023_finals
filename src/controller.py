@@ -325,14 +325,8 @@ class Controller:
             else:
                 # 说明是地图2
                 self.map_type = self.MAP_TYPE_3V1
-            # 暂存没有用到的工作台
-            tmp_wb = []
             for _ in range(len(self.other_workbenchs_order)):
                 workbench_block = self.other_workbenchs_order.popleft()
-                if self.rival_workbenchs[workbench_block].typeID in [7, 8, 9]:
-                    # 开局暂不去7 8
-                    tmp_wb.append(workbench_block)
-                    continue
                 for robot in zz_robots:
                     if robot.block_model:
                         continue
@@ -342,8 +336,6 @@ class Controller:
                 self.other_workbenchs_order.append(workbench_block)
                 if all([robot.block_model for robot in zz_robots]):
                     break
-            for twb in tmp_wb:
-                self.other_workbenchs_order.appendleft(twb)
         else:
             # 相对狭窄说明是地图3
             if self.m_map.block_num > Workmap.BLOCK_NUM_THRESHOLD:
@@ -351,16 +343,11 @@ class Controller:
             else:
                 self.map_type = self.MAP_TYPE_BROAD
 
-            tmp_wb = []
             attack_num = 0
             for _ in range(len(self.other_workbenchs_order)):
                 if attack_num >= self.max_block_robots:
                     break
                 workbench_block = self.other_workbenchs_order.popleft()
-                if self.rival_workbenchs[workbench_block].typeID in [7, 8, 9]:
-                    # 开局暂不去7 8
-                    tmp_wb.append(workbench_block)
-                    continue
                 for robot in self.robots:
                     if robot.block_model:
                         continue
@@ -369,9 +356,6 @@ class Controller:
                         attack_num += 1
                         break
                 self.other_workbenchs_order.append(workbench_block)
-            for twb in tmp_wb:
-                self.other_workbenchs_order.appendleft(twb)
-
         # 最后集中处理一下机器人状态:
         for robot in self.robots:
             if robot.block_model:
