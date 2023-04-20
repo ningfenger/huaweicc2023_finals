@@ -2071,7 +2071,7 @@ class Controller:
         # 这一状态最好老老实实追点, 少用re_path
         elif robot.status == Robot.AVOID_CLASH:
             other_locs = [self.robots[idx].loc for idx in range(
-                len(self.robots)) if idx != robot.loc]
+                len(self.robots)) if idx != robot.ID]
             if self.rival_list:
                 other_locs.extend(list(zip(*self.rival_list))[0])
             target_loc = self.workbenchs[robot.target].loc
