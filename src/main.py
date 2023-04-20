@@ -77,6 +77,7 @@ if __name__ == '__main__':
     try:
         controller.init_workbench_other()
         controller.attack_all()
+        # sys.stderr.write(f"地图类型：{controller.map_type}\n")
     except BaseException as e:
         sys.stderr.write(f'{e}\n')
     finish()
