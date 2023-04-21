@@ -1691,6 +1691,64 @@ class Controller:
                 target_loc, target_idx = self.get_target(idx_robot)
         return col_flag, sb_flag, sb_safe_dis, d, target_loc, target_idx
 
+    def are_you_dog(self, idx_robot, delta_theta_robot2target, thr_theta_robot, thr_theta_rival):
+        # 输入： idx_robot 机器人头与目标偏角 角度阈值
+        # 检测是否有对手在目标点
+        robot = self.robots[idx_robot]
+
+        if abs(delta_theta_robot2target) > thr_theta_robot:
+            return False, 0, 0
+
+        if robot.bck_reRun_status:
+            return False, 0, 0
+
+        xunluo_flag = robot.block_model and robot.block_type == Robot.BLOCK_TYPE_PATORL
+        # 订单要超时了
+        if robot.get_frame_reman() < 0 and not xunluo_flag:
+            return False, 0, 0
+
+        if len(robot.path) < 10:
+            if xunluo_flag:
+                pass
+            else:
+                return False, 0, 0
+
+        if robot.item_type > 3:
+            return False, 0, 0
+
+        dis_robot2rival = 1000
+        loc_rival = None
+        delta_theta_robot2rival = None
+
+        if len(self.rival_list) == 0:
+            return False, 0, 0
+        for rival in self.rival_list:
+            # 取出敌人列表 的 坐标
+            loc_rival_temp, r_temp = rival
+            # 机器人指向敌人的向量
+            vec_temp = np.array(loc_rival_temp) - np.array(robot.loc)
+            dis = np.sqrt(np.dot(vec_temp, vec_temp))
+
+            theta_robot2rival_temp = np.arctan2(vec_temp[1], vec_temp[0])
+            delta_theta_robot2rival_temp = theta_robot2rival_temp - robot.toward
+
+            delta_theta_robot2rival_temp = (delta_theta_robot2rival_temp +
+                                           math.pi) % (2 * math.pi) - math.pi
+            if abs(r_temp - 0.45) < abs(r_temp - 0.53):
+                carry_flag = True
+            else:
+                carry_flag = False
+            if dis < dis_robot2rival and abs(delta_theta_robot2rival_temp) < thr_theta_rival and ((not carry_flag and xunluo_flag) or  carry_flag) :
+                dis_robot2rival = dis
+                loc_rival = loc_rival_temp
+                delta_theta_robot2rival = delta_theta_robot2rival_temp
+
+        if loc_rival is None:
+            return False, 0, 0
+        else:
+            return True, delta_theta_robot2rival, loc_rival
+
+
     def move(self, idx_robot):
         # 新版move
 
@@ -1744,6 +1802,48 @@ class Controller:
         delta_theta_robot2workbench = target_theta - robot_theta
         delta_theta_robot2workbench = (delta_theta_robot2workbench +
                        math.pi) % (2 * math.pi) - math.pi
+
+        # 获取距离工作台最近的敌人位置
+        offset = 0.2
+        thr_theta_dog = math.pi * 0.35
+        loc_rival, r_rival, dis_workbench2rival, theta_workbench2rival, dis_workbench2robot, theta_workbench2robot, dis_robot2rival, delta_theta_robot2rival = self.get_nearst_rival2workbench(
+            idx_robot, offset)
+        # ''' 开始狗相关
+        flag_dog, d_theta_dog, dog_rival_loc = self.are_you_dog(idx_robot, delta_theta_robot2workbench, math.pi * 0.25, thr_theta_dog)
+        if flag_dog and not robot.dog_status:
+            robot.dog_status = True
+            robot.dog_stamp = self.frame_id
+            robot.dog_chain = robot.loc
+            robot.dog_count = Robot.DOG_MAX
+            robot.dog_theta = target_theta
+
+
+        if robot.dog_status:
+            if not flag_dog:
+                robot.dog_count -= 1
+                if robot.dog_count <= 0:
+                    robot.dog_status = False
+            dog_robot_loc = np.array(robot.loc)
+            dog_rival_loc = np.array(dog_rival_loc)
+            vec_dog2robot = dog_robot_loc - np.array(robot.dog_chain)
+            vec_dog2rival = dog_rival_loc - np.array(robot.dog_chain)
+            theta_dog2robot = np.arctan2(vec_dog2robot[1], vec_dog2robot[0])
+            theta_dog2rival = np.arctan2(vec_dog2rival[1], vec_dog2rival[0])
+            d_theta_dog2robot = theta_dog2robot - robot.dog_theta
+            d_theta_dog2rival = theta_dog2rival - robot.dog_theta
+
+            d_theta_dog2robot = (d_theta_dog2robot + math.pi) % (2 * math.pi) - math.pi
+            d_theta_dog2rival = (d_theta_dog2rival + math.pi) % (2 * math.pi) - math.pi
+            dis_dog2robot = np.sqrt(np.dot(vec_dog2robot, vec_dog2robot))
+            dis_dog2rival = np.sqrt(np.dot(vec_dog2rival, vec_dog2rival))
+            if abs(d_theta_dog2robot) > thr_theta_dog or abs(d_theta_dog2rival) > thr_theta_dog or dis_dog2robot > 10 or dis_dog2rival > 10 or self.frame_id - robot.dog_stamp > 400:
+                robot.dog_status = False
+            # 追好写
+            robot.rotate(d_theta_dog*k_r)
+            robot.forward(9)
+            return
+        # 结束狗相关 '''
+
         if robot.status == Robot.BLOCK_OTRHER:
             # 干扰敌人的机器人
 
@@ -1754,11 +1854,6 @@ class Controller:
                 my_r = 0.45
             else:
                 my_r = 0.53
-
-            # 获取距离工作台最近的敌人位置
-            offset = 0.2
-            loc_rival, r_rival, dis_workbench2rival, theta_workbench2rival, dis_workbench2robot, theta_workbench2robot, dis_robot2rival, delta_theta_robot2rival = self.get_nearst_rival2workbench(idx_robot, offset)
-
 
 
             if robot.attack_status == Robot.MOV_TO_ATTACK:
@@ -2415,7 +2510,6 @@ class Controller:
         dis_workbench2robot = np.sqrt(np.dot(vec_robot2workbench, vec_robot2workbench))
         theta_workbench2robot = np.arctan2(vec_robot2workbench[1], vec_robot2workbench[0])
 
-
         dis_workbench2rival = 1000
         loc_rival = None
         theta_workbench2rival = None
@@ -2424,17 +2518,18 @@ class Controller:
         delta_theta_robot2rival = None
         for rival in self.rival_list:
             # 取出敌人列表 的 坐标
-            loc_rival, r = rival
+            loc_rival_temp, r_temp = rival
+            ###############BUGBUGBUGBUG 已改正
             # 工作台指向敌人的向量
-            vec = np.array(loc_rival) - np.array(workbench_loc)
-            dis = np.sqrt(np.dot(vec, vec))
+            vec_temp = np.array(loc_rival_temp) - np.array(workbench_loc)
+            dis_temp = np.sqrt(np.dot(vec_temp, vec_temp))
 
-            if dis < dis_workbench2rival:
-                dis_workbench2rival = dis
-                loc_rival = loc_rival
+            if dis_temp < dis_workbench2rival:
+                dis_workbench2rival = dis_temp
+                loc_rival = loc_rival_temp
                 # 工作台指向敌人的角度
-                theta_workbench2rival = np.arctan2(vec[1], vec[0])
-                r_rival = r
+                theta_workbench2rival = np.arctan2(vec_temp[1], vec_temp[0])
+                r_rival = r_temp
 
 
                 attack_loc = np.array(
