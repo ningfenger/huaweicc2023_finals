@@ -50,7 +50,7 @@ class Robot:
         self.block_type = self.BLOCK_TYPE_SENTINEL # 崽种类型, 1 守点型, 2 巡逻型
         self.block_workbench_index = 0 # 巡逻型的工作台下标
         self.free_frames = 0 # 空闲帧数
-
+        self.bck_timer = 0
         # 关于检测机器人对眼死锁的成员变量
         self.pre_position = np.array(list(self.loc))
         self.pre_frame = -1  # 记录上次一帧内移动距离大于min_dis
@@ -71,7 +71,7 @@ class Robot:
         self.target_idx = None  # 记录临时点的下标，用于计算是否转弯点
         self.dog_chain = None  # 记录移动时顺便撞击敌方的参考位置 反复冲撞需要在此范围内 因此可能无需状态记录
         self.bck_reRun = None  # 记录反复冲撞的参考位置
-        self.bck_reRun_status = None  # 记录反复冲撞的状态，包含冲撞与回退
+        self.bck_reRun_status = False  # 记录反复冲撞的状态，包含冲撞与回退
         self.last_target = -1  # 记录上一个目标，解除死锁用
         self.anoter_robot = -1  # 记录和它冲突的机器人
         self.temp_idx = None
