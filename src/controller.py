@@ -2465,11 +2465,13 @@ class Controller:
                         r_w.attack_value = Workbench.MAX_ATTCK_VALUE
                 # 在工作台附近才减分
                 elif robot.block_type == Robot.BLOCK_TYPE_SENTINEL and self.dis2target(idx_robot) < 1.5:
+                    # sys.stderr.write(f'robotID:{robot.ID}, attack_value{r_w.attack_value}\n')
                     r_w.attack_value -= 1
-                    if r_w.attack_value == 0 or robot:
+                    if r_w.attack_value == 0:
                         self.attack_one(robot)
+                        robot.attack_status = Robot.MOV_TO_ATTACK
                 elif robot.block_type == Robot.BLOCK_TYPE_PATORL and self.dis2target(idx_robot) < 0.5:
-                    sys.stderr.write(f'robotID:{robot.ID}, block_workbench_index{robot.block_workbench_index}\n')
+                    # sys.stderr.write(f'robotID:{robot.ID}, block_workbench_index{robot.block_workbench_index}\n')
                     for _ in range(len(self.other_workbenchs_list)):
                         robot.block_workbench_index = (
                             robot.block_workbench_index + 1) % len(self.other_workbenchs_list)
@@ -2477,6 +2479,7 @@ class Controller:
                             robot.target = robot.get_buy()
                             robot.set_path(self.m_map.get_float_path(
                                 robot.loc, robot.target, not self.blue_flag, robot.item_type > 0))
+                            robot.attack_status = Robot.MOV_TO_ATTACK
                             break
                 # sys.stderr.write(f'robotID:{robot.ID}, attack_value{r_w.attack_value}\n')
 
