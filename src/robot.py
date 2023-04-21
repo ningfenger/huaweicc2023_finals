@@ -47,7 +47,7 @@ class Robot:
         self.anoter_workbench_list = []  # 可到达的敌方工作台列表
         self.path = []
         self.block_model = False # 崽种模式
-        self.block_type = self.BLOCK_TYPE_PATORL # 崽种类型, 1 守点型, 2 巡逻型
+        self.block_type = self.BLOCK_TYPE_SENTINEL # 崽种类型, 1 守点型, 2 巡逻型
         self.block_workbench_index = 0 # 巡逻型的工作台下标
         self.free_frames = 0 # 空闲帧数
 
