@@ -189,7 +189,7 @@ class Controller:
                     over_flag = False
                     idx_workbench_to_buy = robot.get_buy()
                     idx_workbench_to_sell = robot.get_sell()
-                    robot.target = idx_workbench_to_buy
+                    robot.bck_reRun_status = False
                     self.re_path(robot)
                     # 预定工作台
                     self.workbenchs[idx_workbench_to_buy].pro_buy()
@@ -461,6 +461,7 @@ class Controller:
                 # 预售
                 self.workbenchs[robot.get_sell()].pro_sell(item_type, True)
                 robot.target = robot.get_sell()
+                robot.bck_reRun_status = False
                 self.re_path(robot)
                 return True
             elif robot.item_type < 4 or (destroy and robot.item_type < 7):
@@ -2322,6 +2323,14 @@ class Controller:
                     # 重新预售，有极低概率出问题，重复预售
                     workbench_sell = self.workbenchs[robot.get_sell()]
                     workbench_sell.pro_sell(robot.item_type)
+                    # 急需商品列表的逆操作
+                    if workbench_sell.typeID == 7 and workbench_sell.material != 0:
+                        # sys.stderr.write(f"material: {workbench_sell.material}\n")
+                        if workbench_sell.material in Workbench.WORKSTAND_STARVE:  # 就差一个了
+                            self.starve[robot.item_type] += 1
+                        else:
+                            self.starve[Workbench.WORKSTAND_STARVE[workbench_sell.material + (
+                                    1 << robot.item_type)]] -= 1
                     continue
                 # 【空闲】执行调度策略
                 if self.choise(frame_id, robot):
@@ -2329,6 +2338,7 @@ class Controller:
                     idx_workbench_to_buy = robot.get_buy()
                     idx_workbench_to_sell = robot.get_sell()
                     robot.target = idx_workbench_to_buy
+                    robot.bck_reRun_status = False
                     robot.set_path(self.m_map.get_float_path(
                         robot.loc, idx_workbench_to_buy, self.blue_flag))
                     # 预定工作台
@@ -2372,6 +2382,7 @@ class Controller:
                         self.workbenchs[idx_workbench_to_buy].pro_buy(False)
                         idx_workbench_to_sell = robot.get_sell()
                         robot.target = idx_workbench_to_sell  # 更新目标到卖出地点
+                        robot.bck_reRun_status = False
                         # 取消拉黑
                         if idx_workbench_to_buy in self.black_workbenchs:
                             self.black_workbenchs.pop(idx_workbench_to_buy)
@@ -2394,8 +2405,11 @@ class Controller:
                 # 【出售途中】
                 # 判断是否出现了因跳帧导致的购买失败，有极低的概率重复预购
                 if robot.item_type == 0:
+                    idx_workbench_to_buy = robot.get_buy()
+                    robot.target = idx_workbench_to_buy  # 更新目标到买入
+                    robot.bck_reRun_status = False
                     robot.status = Robot.MOVE_TO_BUY_STATUS
-                    self.workbenchs[robot.get_buy()].pro_buy()
+                    self.workbenchs[idx_workbench_to_buy].pro_buy()
                     continue
                 # 移动
                 self.move(idx_robot)
@@ -2493,7 +2507,8 @@ class Controller:
                         self.blue_flag, robot.item_type > 0))  # 预估到达时间
                 # and robot.is_stuck:
                 if robot.get_frame_reman() - move_reman < self.MAX_TIME_OUT * (1 if robot.item_type == 0 else 1.5):
-                    self.re_mession(robot, self.AVOID_FRAME_WAIT)
+                    # 严重超时也会destroy456
+                    self.re_mession(robot, self.AVOID_FRAME_WAIT, robot.get_frame_reman() - move_reman < self.MAX_TIME_OUT*3)
             idx_robot += 1
         for idx_robot in sell_out_list:
             robot = self.robots[idx_robot]
