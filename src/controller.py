@@ -1635,108 +1635,138 @@ class Controller:
             target_vec[1], target_vec[0])
 
         robot_theta = self.robots[idx_robot].toward
-        delta_theta = target_theta - robot_theta
-        delta_theta = (delta_theta +
+        delta_theta_robot2workbench = target_theta - robot_theta
+        delta_theta_robot2workbench = (delta_theta_robot2workbench +
                        math.pi) % (2 * math.pi) - math.pi
         if robot.status == Robot.BLOCK_OTRHER:
             # 干扰敌人的机器人
+
+            # 需要计算的变量：
+
+            # 自身机器人半径
+            if robot.item_type == 0:
+                my_r = 0.45
+            else:
+                my_r = 0.53
+
+            # 获取距离工作台最近的敌人位置
+            offset = 0.2
+            loc_rival, r_rival, dis_workbench2rival, theta_workbench2rival, dis_workbench2robot, theta_workbench2robot, dis_robot2rival, delta_theta_robot2rival = self.get_nearst_rival2workbench(idx_robot, offset)
+
+
+
             if robot.attack_status == Robot.MOV_TO_ATTACK:
                 # 前往干扰工作台的路上
-                if abs(delta_theta) > math.pi / 6:
-                    # 角度相差较大 原地转向
-                    robot.forward(0)
-                elif self.target_slow(idx_robot, target_idx, target_loc, col_flag, sb_flag, sb_safe_dis):
-                    # 慢速行驶至目标
-                    robot.forward(dis_target * k_f)
-                else:
-                    # 高速行驶至目标
-                    robot.forward(9)
+                if abs(delta_theta_robot2workbench) > math.pi * 0.65 and dis_workbench2robot < 2:
+                    # 倒车角度
+                    bck_delta_theta = (delta_theta_robot2workbench +
+                       2 * math.pi) % (2 * math.pi) - math.pi
 
-                robot.rotate(delta_theta * k_r)
+                    # 倒车行驶
+                    robot.forward(-dis_workbench2robot * k_f)
+                    robot.rotate(bck_delta_theta * k_r)
+                else:
+                    if abs(delta_theta_robot2workbench) > math.pi / 6:
+                        # 角度相差较大 原地转向
+                        robot.forward(0)
+                    elif self.target_slow(idx_robot, target_idx, target_loc, col_flag, sb_flag, sb_safe_dis):
+                        # 慢速行驶至目标
+                        robot.forward(dis_target * k_f)
+                    else:
+                        # 高速行驶至目标
+                        robot.forward(9)
+
+                    robot.rotate(delta_theta_robot2workbench * k_r)
+
                 if dis2workbench < 0.2:
                     # 到达敌方工作台，切换为等待攻击状态
                     robot.attack_status = Robot.WAIT_TO_ATTACK
 
             if robot.attack_status == Robot.WAIT_TO_ATTACK:
                 # 等待敌人接近工作台
-
+                robot.forward(0)
                 # 检查是否有敌人靠近工作台
-                if self.rivals_on_targets(idx_robot, 9):
+                if loc_rival is not None and dis_workbench2rival < 9:
                     # 瞄准敌人的方向
-
-                    # 获取距离工作台最近的敌人位置
-                    dis_min, rival_loc, rival_r, theta_rival = self.get_nearst_rival2workbench(
-                        idx_robot)
-
-                    # 本机机器人指向敌人位置的向量
-                    vec_robot2rival = np.array(rival_loc) - np.array(robot.loc)
-
-                    # 向量的角度
-                    rival_theta = np.arctan2(
-                        vec_robot2rival[1], vec_robot2rival[0])
-
-                    # 机器人指向敌人的角度偏移
-                    delta_theta = rival_theta - robot_theta
-
-                    # 映射到0-2pi区间
-                    delta_theta = (delta_theta +
-                                   math.pi) % (2 * math.pi) - math.pi
 
                     robot.forward(0)
 
                     # 原地旋转预瞄准
-                    robot.rotate(delta_theta * k_r)
+                    robot.rotate(delta_theta_robot2rival * k_r)
 
-                    if dis_min < 4:
-                        # 到达敌人位置，切换为攻击状态
+                    if dis_workbench2rival < 4:
+                        # 敌人过于靠近工作台，切换为攻击状态
                         robot.attack_status = Robot.ATTACK
-
+                elif dis_workbench2robot > 0.2:
+                    # 未知原因变远了， 切换回
+                    robot.attack_status = Robot.MOV_TO_ATTACK
             if robot.attack_status == Robot.ATTACK:
                 # 攻击敌人 金钟罩
 
-                # 获取距离工作台最近的敌人位置
-                dis_min, rival_loc, rival_r, theta_rival = self.get_nearst_rival2workbench(
-                    idx_robot)
-                if robot.item_type == 0:
-                    my_r = 0.45
-                else:
-                    my_r = 0.53
-                if theta_rival is not None:
-                    theta_rival = theta_rival + math.pi
-                    offset = 0.2
-                    target_loc = np.array(
-                        rival_loc) - offset * np.array([np.cos(theta_rival), np.sin(theta_rival)])
-                    target_vec = [target_loc[0] - robot.loc[0],
-                                  target_loc[1] - robot.loc[1]]
-                    target_theta = np.arctan2(
-                        target_vec[1], target_vec[0])
-                    robot_theta = self.robots[idx_robot].toward
-                    delta_theta = target_theta - robot_theta
-                    robot.forward((dis_target - (rival_r + my_r - offset)))
-                    robot.rotate(delta_theta * k_r)
 
-                if not self.rivals_on_targets(idx_robot, 6):
-                    # 没有敌人了，切换为前往工作台的路上
-                    robot.attack_status = Robot.MOV_TO_ATTACK
+                if loc_rival is not None:
+                    # debug 并且约束攻击距离
+                    if dis_workbench2robot < 4 and dis_workbench2robot < dis_workbench2rival and abs(delta_theta_robot2rival) < math.pi / 4:
+                        robot.forward((1.5 - dis2workbench) * 50)
+                        robot.rotate(delta_theta_robot2rival)
+                        # sys.stderr.write('干！\n')
+                    else:
+                        # 和敌方机器人同时争抢进入工作台
+                        # sys.stderr.write(delta_theta_robot_sub_rival)
+                        if abs(delta_theta_robot2workbench) > math.pi / 6:
+                            # 角度相差较大 原地转向
+                            robot.forward(0)
+                        else:
+                            robot.forward(9)
+                        robot.rotate(delta_theta_robot2workbench * k_r)
+
+
+                # 这里有bug 导致迅速回击时出现倒车
+                robot.rotate(delta_theta_robot2workbench * k_r)
+
+                if loc_rival is None or dis_workbench2rival > 4:
+                    # 敌人被打跑
+                    robot.attack_status = Robot.BCK_TO_ATTACK
 
             if robot.attack_status == Robot.BCK_TO_ATTACK:
                 # 回防工作台的路上
-                if self.target_slow(idx_robot, target_idx, target_loc, col_flag, sb_flag, sb_safe_dis):
-                    # 慢速行驶至目标
-                    robot.forward(dis_target * k_f)
+
+                # 倒车行驶的角度
+                delta_theta_robot2workbench_bck = (delta_theta_robot2workbench +
+                               2 * math.pi) % (2 * math.pi) - math.pi
+                # if abs(delta_theta_robot2workbench) < math.pi * 0.2:
+                #     robot.forward(dis2workbench * k_f)
+                #     robot.rotate(delta_theta_robot2workbench * k_r)
+                # else:
+                #     if abs(delta_theta_robot2workbench) > math.pi * 0.8 and dis_workbench2robot < 1:
+                #         robot.forward(0)
+                #     else:
+                #         robot.forward(-dis2workbench * k_f)
+                #     robot.rotate(delta_theta_robot2workbench_bck * k_r)
+
+                if abs(delta_theta_robot2workbench) > math.pi * 0.7 and dis_workbench2robot < 1:
+                    robot.forward(-dis2workbench * k_f)
+                    robot.rotate(delta_theta_robot2workbench_bck * k_r)
+                elif abs(delta_theta_robot2workbench) > math.pi * 0.2:
+                    robot.forward(0)
+                    robot.rotate(delta_theta_robot2workbench * k_r)
                 else:
-                    # 高速行驶至目标
+                    robot.forward(dis2workbench * k_f)
+                    robot.rotate(delta_theta_robot2workbench * k_r)
 
-                    robot.forward(9)
-
-                robot.rotate(delta_theta * k_r)
-
-                if self.rivals_on_targets(idx_robot, 6):
+                if loc_rival is not None and dis_workbench2rival < 4:
                     # 到达敌方工作台，切换为攻击状态
                     robot.attack_status = Robot.ATTACK
+
+                if loc_rival is not None and dis_workbench2robot < 0.2:
+                    robot.attack_status = Robot.WAIT_TO_ATTACK
+
+                if loc_rival is not None and abs(dis_workbench2robot - dis_target) > 0.01:
+                    sys.stderr.write('1')
+                    robot.attack_status = Robot.MOV_TO_ATTACK
+
         else:
             # 正常的机器人
-
             if flag_avoid_obt:
                 delta_theta = d_theta_avoid_obt
 
@@ -1757,13 +1787,13 @@ class Controller:
                 # 高速行驶至目标
                 robot.forward(9)
 
-            if abs(delta_theta) > math.pi / 6:
+            if abs(delta_theta_robot2workbench) > math.pi / 6:
                 # 角度相差较大 原地转向
                 robot.forward(0)
 
 
 
-            robot.rotate(delta_theta * k_r)
+            robot.rotate(delta_theta_robot2workbench * k_r)
 
     def target_slow(self, idx_robot, target_idx, target_loc, col_flag, sb_flag, sb_safe_dis):
         # 判断目标点是否需要减速
@@ -2213,32 +2243,56 @@ class Controller:
         # 不存在距离过近的敌人
         return False
 
-    def get_nearst_rival2workbench(self, idx_robot):
+    def get_nearst_rival2workbench(self, idx_robot, offset):
         # 检测是否有对手在目标点
         robot = self.robots[idx_robot]
         idx_workbench = robot.target
 
         # 目标工作台坐标
-        target_loc = self.workbenchs[idx_workbench].loc if self.robots[idx_robot].status != Robot.BLOCK_OTRHER else \
+        workbench_loc = self.workbenchs[idx_workbench].loc if self.robots[idx_robot].status != Robot.BLOCK_OTRHER else \
             self.rival_workbenchs[idx_workbench].loc
 
-        dis_min = 1000
-        loc_rival_min = None
-        theta_min = None
-        r_min = None
+        vec_robot2workbench = np.array([workbench_loc[0] - robot.loc[0], workbench_loc[1] - robot.loc[1]])
+
+        dis_workbench2robot = np.sqrt(np.dot(vec_robot2workbench, vec_robot2workbench))
+        theta_workbench2robot = np.arctan2(vec_robot2workbench[1], vec_robot2workbench[0])
+
+
+        dis_workbench2rival = 1000
+        loc_rival = None
+        theta_workbench2rival = None
+        r_rival = None
+        dis_robot2rival = None
+        delta_theta_robot2rival = None
         for rival in self.rival_list:
             # 取出敌人列表 的 坐标
             loc_rival, r = rival
-            vec = np.array(loc_rival) - np.array(target_loc)
+            # 工作台指向敌人的向量
+            vec = np.array(loc_rival) - np.array(workbench_loc)
             dis = np.sqrt(np.dot(vec, vec))
-            theta = np.arctan2(vec[1], vec[0])
-            if dis < dis_min:
-                dis_min = dis
-                loc_rival_min = loc_rival
-                theta_min = theta
-                r_min = r
-        # 不存在距离过近的敌人
-        return dis_min, loc_rival_min, r_min, theta_min
+
+            if dis < dis_workbench2rival:
+                dis_workbench2rival = dis
+                loc_rival = loc_rival
+                # 工作台指向敌人的角度
+                theta_workbench2rival = np.arctan2(vec[1], vec[0])
+                r_rival = r
+
+
+                attack_loc = np.array(
+                    loc_rival) - offset * np.array([np.cos(theta_workbench2rival), np.sin(theta_workbench2rival)])
+                target_vec = [attack_loc[0] - robot.loc[0],
+                              attack_loc[1] - robot.loc[1]]
+                dis_robot2rival = np.sqrt(np.dot(target_vec, target_vec))
+                target_theta = np.arctan2(
+                    target_vec[1], target_vec[0])
+                robot_theta = self.robots[idx_robot].toward
+                delta_theta_robot2rival = target_theta - robot_theta
+                delta_theta_robot2rival = (delta_theta_robot2rival + math.pi) % (2 * math.pi) - math.pi
+
+        # 距离看守工作台最近敌人的 敌人坐标 敌人半径 工作台到敌人距离 工作台到敌人角度 机器人到敌人距离 机器人到敌人攻击点角度差
+
+        return loc_rival, r_rival, dis_workbench2rival, theta_workbench2rival, dis_workbench2robot, theta_workbench2robot, dis_robot2rival, delta_theta_robot2rival
 
     def control(self, frame_id: int, money: int):
         # 三个问题 1 A_star算路时间太久 2 AVOID状态下尽量避免re_path 3 使这个的触发条件更严格一些
