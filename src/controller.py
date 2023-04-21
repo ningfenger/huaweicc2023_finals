@@ -61,15 +61,15 @@ class Controller:
     MAP_TYPE_BROAD = 1  # 相对开阔的地形，各自的资源点都比较丰富，双方运输路径存在交错。
     MAP_TYPE_3V1 = 2  # 相对开阔的地形，各自的资源点都比较丰富，地图被分割为两个不连通区域，其中一个区域为红色基地，只有红色工作台，机器人初始为3红1蓝，另一个区域为蓝色基地，只有蓝色工作台，机器人初始为3蓝1红。
     MAP_TYPE_NARROW = 3  # 相对狭窄的地形，双方有各自独立基地，基地之间存在多条路径连通，并且基地外部存在一些分散的红蓝工作台可使用。
-    MAP_TYPE_4V4 = 4 # 极为开阔的地形，整张地图完全没有蓝色工作台，只有红色工作台，且红色工作台点比较丰富。
+    MAP_TYPE_4V4 = 4  # 极为开阔的地形，整张地图完全没有蓝色工作台，只有红色工作台，且红色工作台点比较丰富。
 
     # 攻击策略，优先攻击的工作台类型
     ATTACK_TYPE_ORDER = {
-        1:1, 2:1, 3:1,
-        4:4, 5:4, 6:4,
-        7:3, 8:2, 9:2,
+        1: 1, 2: 1, 3: 1,
+        4: 4, 5: 4, 6: 4,
+        7: 3, 8: 2, 9: 2,
     }
-    
+
     def __init__(self, robots: List[Robot], rival_robots: List[Robot], workbenchs: List[Workbench], rival_workbenchs: List[Workbench], m_map: Workmap, blue_flag: bool):
         self.robots = robots
         # 敌方机器人
@@ -88,6 +88,7 @@ class Controller:
 
         # 攻守
         self.other_workbenchs_order = deque()  # 按进攻优先级排序工作台
+        self.other_workbenchs_list = []  # 已经进攻过的工作台
         self.can_not_reach_workbenchs = {}  # 记录无法到达的工作台即持续帧数
         self.rival_list = []
         # 开始派多少机器人去捣乱
@@ -261,6 +262,8 @@ class Controller:
                 other_workbenchs_list.add(ow)
         self.other_workbenchs_order = deque(
             sorted(list(other_workbenchs_list), key=cmp_to_key(cmp_final)))
+        # 将工作台队列拷贝到一个列表, 供巡逻使用
+        self.other_workbenchs_list = list(self.other_workbenchs_order)
 
     def get_attack_path(self, robot: Robot, workbench_block, mast_run=False):
         '''
@@ -319,7 +322,7 @@ class Controller:
                 zz_robots.append(robot)
         # 说明是地图2或者地图4, 全部进攻即可
         if zz_robots:
-            if len(zz_robots)==4:
+            if len(zz_robots) == 4:
                 # 说明是地图4并且我方蓝方
                 self.map_type = self.MAP_TYPE_4V4
             else:
@@ -360,11 +363,15 @@ class Controller:
         for robot in self.robots:
             if robot.block_model:
                 if robot.get_sell() != -1:  # 先买个东西再去崽
+                    robot.block_workbench_index = self.other_workbenchs_list.index(
+                        robot.get_sell())
                     robot.target = robot.get_buy()
                     robot.set_path(self.m_map.get_float_path(
                         robot.loc, robot.target, self.blue_flag, False))
                     robot.status = Robot.MOVE_TO_BUY_STATUS
                 else:  # 直接去找事
+                    robot.block_workbench_index = self.other_workbenchs_list.index(
+                        robot.get_buy())
                     robot.target = robot.get_buy()
                     robot.set_path(self.m_map.get_float_path(
                         robot.loc, robot.target, not self.blue_flag, False))
@@ -401,9 +408,12 @@ class Controller:
         r_loc = self.robots[idx_robot].loc
         return np.sqrt((r_loc[0] - w_loc[0]) ** 2 + (r_loc[1] - w_loc[1]) ** 2)
 
-    def re_mession(self, robot: Robot, frame_wait = 0):
+    def re_mession(self, robot: Robot, frame_wait=0, destroy=False):
         '''
         当机器人长期无法完成任务时，尝试切换机器人状态
+        frame_wait: 调用参方法后的等待帧数，如果还是无法完成任务，就倒车几帧
+        destroy: 是否强制销毁, 如果为True, 4-6也会被销毁
+        返回True为切换成功, False为切换失败, 只能撞开
         '''
         if frame_wait > 0:
             # 超时死锁处理，倒车几帧
@@ -452,14 +462,14 @@ class Controller:
                 self.workbenchs[robot.get_sell()].pro_sell(item_type, True)
                 robot.target = robot.get_sell()
                 self.re_path(robot)
-                return
-            elif robot.item_type < 4:
+                return True
+            elif robot.item_type < 4 or (destroy and robot.item_type < 7):
                 robot.destroy()
             else:
                 # 重新预售, 直接返回
                 self.workbenchs[sell_idx].pro_sell(
                     self.workbenchs[robot.get_buy()].typeID)
-                return
+                return False
         else:
             # 设置工作台不可达状态
             # *(1<<self.black_workbenchs.get(buy_idx,0))
@@ -468,6 +478,7 @@ class Controller:
                 buy_idx, 0)+1
         # 重置为空闲状态
         robot.status = Robot.FREE_STATUS
+        return True
 
     def detect_deadlock(self, frame):
         # if frame % 10 != 0:
@@ -2453,10 +2464,20 @@ class Controller:
                     if self.rival_workbenchs[robot.target].attack_value > Workbench.MAX_ATTCK_VALUE:
                         r_w.attack_value = Workbench.MAX_ATTCK_VALUE
                 # 在工作台附近才减分
-                elif self.dis2target(idx_robot) < 1.5:
+                elif robot.block_type == Robot.BLOCK_TYPE_SENTINEL and self.dis2target(idx_robot) < 1.5:
                     r_w.attack_value -= 1
-                    if r_w.attack_value == 0:
+                    if r_w.attack_value == 0 or robot:
                         self.attack_one(robot)
+                elif robot.block_type == Robot.BLOCK_TYPE_PATORL and self.dis2target(idx_robot) < 0.5:
+                    sys.stderr.write(f'robotID:{robot.ID}, block_workbench_index{robot.block_workbench_index}\n')
+                    for _ in range(len(self.other_workbenchs_list)):
+                        robot.block_workbench_index = (
+                            robot.block_workbench_index + 1) % len(self.other_workbenchs_list)
+                        if self.get_attack_path(robot, self.other_workbenchs_list[robot.block_workbench_index]):
+                            robot.target = robot.get_buy()
+                            robot.set_path(self.m_map.get_float_path(
+                                robot.loc, robot.target, not self.blue_flag, robot.item_type > 0))
+                            break
                 # sys.stderr.write(f'robotID:{robot.ID}, attack_value{r_w.attack_value}\n')
 
             # 根据状态更新预估时间
@@ -2464,8 +2485,11 @@ class Controller:
             robot.update_frame_reman()
             # 严重超时, 重新规划, 对手里有东西的稍微宽容一点
             if robot.status in [Robot.MOVE_TO_BUY_STATUS, Robot.MOVE_TO_SELL_STATUS]:
-                move_reman = self.MOVE_SPEED*len(self.m_map.get_path(robot.loc, robot.target, self.blue_flag, robot.item_type > 0)) # 预估到达时间
-                if robot.get_frame_reman() - move_reman < self.MAX_TIME_OUT * (1 if robot.item_type == 0 else 1.5): # and robot.is_stuck:
+                move_reman = self.MOVE_SPEED * \
+                    len(self.m_map.get_path(robot.loc, robot.target,
+                        self.blue_flag, robot.item_type > 0))  # 预估到达时间
+                # and robot.is_stuck:
+                if robot.get_frame_reman() - move_reman < self.MAX_TIME_OUT * (1 if robot.item_type == 0 else 1.5):
                     self.re_mession(robot, self.AVOID_FRAME_WAIT)
             idx_robot += 1
         for idx_robot in sell_out_list:

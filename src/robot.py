@@ -25,6 +25,9 @@ class Robot:
     WAIT_TO_ATTACK = 1
     ATTACK = 2
     BCK_TO_ATTACK = 3
+
+    BLOCK_TYPE_SENTINEL = 1 # 哨兵模式，坚守工作台
+    BLOCK_TYPE_PATORL = 2 # 巡逻模式，各个工作台之间巡逻
     def __init__(self, ID: int, loc: Tuple[int]):
         self.ID = ID
         self.loc = copy.deepcopy(loc)
@@ -44,6 +47,8 @@ class Robot:
         self.anoter_workbench_list = []  # 可到达的敌方工作台列表
         self.path = []
         self.block_model = False # 崽种模式
+        self.block_type = self.BLOCK_TYPE_SENTINEL # 崽种类型, 1 守点型, 2 巡逻型
+        self.block_workbench_index = 0 # 巡逻型的工作台下标
         self.free_frames = 0 # 空闲帧数
 
         # 关于检测机器人对眼死锁的成员变量
