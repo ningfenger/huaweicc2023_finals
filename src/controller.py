@@ -1988,7 +1988,7 @@ class Controller:
 
                 if self.target_slow(idx_robot, target_idx, target_loc, col_flag, sb_flag, sb_safe_dis):
                     # 慢速行驶至目标
-                    robot.forward(dis_target * k_r)
+                    robot.forward(dis_target * k_f)
                 else:
                     # 高速行驶至目标
                     robot.forward(9)
@@ -1998,7 +1998,7 @@ class Controller:
                     robot.forward((d - self.WILL_CLASH_DIS-0.1) * 6)
                 if self.target_slow(idx_robot, target_idx, target_loc, col_flag, sb_flag, sb_safe_dis):
                     # 慢速行驶至目标
-                    robot.forward(dis_target * k_r)
+                    robot.forward(dis_target * k_f)
                 else:
                     # 高速行驶至目标
                     robot.forward(9)
