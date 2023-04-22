@@ -99,7 +99,7 @@ def show2(controller:Controller):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     # map = workmap.Workmap(debug=True)
-    # map.read_map_directly('F:/huaweicc/maps/1.txt')
+    # map.read_map_directly('F:/huaweicc/maps/1bck.txt')
     # map.draw_map()
     controller = load_controller()
     show(2, controller)
