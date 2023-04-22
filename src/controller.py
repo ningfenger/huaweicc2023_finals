@@ -91,6 +91,9 @@ class Controller:
         self.other_workbenchs_list = []  # 已经进攻过的工作台
         self.can_not_reach_workbenchs = {}  # 记录无法到达的工作台即持续帧数
         self.rival_list = []
+        self.dog_chanin_length = 10 # 狗链长度
+        self.thr_theta_dog = math.pi * 0.35 # 咬的范围
+        self.define_dis = 4 # 守卫范围
         # 开始派多少机器人去捣乱
         self.max_block_robots = 1 if self.blue_flag else 1
         # 记录工作台被拉黑了多少次
@@ -325,9 +328,13 @@ class Controller:
             if len(zz_robots) == 4:
                 # 说明是地图4并且我方蓝方
                 self.map_type = self.MAP_TYPE_4V4
+                self.define_dis = 10
+                Workbench.MAX_ATTCK_VALUE = 200 # 加大切换频率
             else:
                 # 说明是地图2
                 self.map_type = self.MAP_TYPE_3V1
+                self.define_dis = 10
+                Workbench.MAX_ATTCK_VALUE = 200 # 加大切换频率
             for _ in range(len(self.other_workbenchs_order)):
                 workbench_block = self.other_workbenchs_order.popleft()
                 for robot in zz_robots:
@@ -345,6 +352,8 @@ class Controller:
                 self.map_type = self.MAP_TYPE_NARROW
             else:
                 self.map_type = self.MAP_TYPE_BROAD
+                if not self.blue_flag: # 宽阔地带红方不崽人
+                    self.max_block_robots = 0
 
             attack_num = 0
             for _ in range(len(self.other_workbenchs_order)):
@@ -377,6 +386,8 @@ class Controller:
                         robot.loc, robot.target, not self.blue_flag, False))
                     robot.status = Robot.BLOCK_OTRHER
                     self.rival_workbenchs[robot.target].attack_value = Workbench.MAX_ATTCK_VALUE
+        
+            
 
     def attack_one(self, robot: Robot, mast_run=False):
         '''
@@ -1805,7 +1816,7 @@ class Controller:
 
         # 获取距离工作台最近的敌人位置
         offset = 0.2
-        thr_theta_dog = math.pi * 0.35
+        thr_theta_dog = self.thr_theta_dog
         loc_rival, r_rival, dis_workbench2rival, theta_workbench2rival, dis_workbench2robot, theta_workbench2robot, dis_robot2rival, delta_theta_robot2rival = self.get_nearst_rival2workbench(
             idx_robot, offset)
         # ''' 开始狗相关
@@ -1836,7 +1847,7 @@ class Controller:
             d_theta_dog2rival = (d_theta_dog2rival + math.pi) % (2 * math.pi) - math.pi
             dis_dog2robot = np.sqrt(np.dot(vec_dog2robot, vec_dog2robot))
             dis_dog2rival = np.sqrt(np.dot(vec_dog2rival, vec_dog2rival))
-            if abs(d_theta_dog2robot) > thr_theta_dog or abs(d_theta_dog2rival) > thr_theta_dog or dis_dog2robot > 10 or dis_dog2rival > 10 or self.frame_id - robot.dog_stamp > 400:
+            if abs(d_theta_dog2robot) > thr_theta_dog or abs(d_theta_dog2rival) > thr_theta_dog or dis_dog2robot > self.dog_chanin_length or dis_dog2rival > self.dog_chanin_length or self.frame_id - robot.dog_stamp > 600:
                 robot.dog_status = False
             # 追好写
             robot.rotate(d_theta_dog*k_r)
@@ -1907,9 +1918,13 @@ class Controller:
 
                 if loc_rival is not None:
                     # debug 并且约束攻击距离
-                    if dis_workbench2robot < 4 and dis_workbench2robot < dis_workbench2rival and abs(delta_theta_robot2rival) < math.pi / 4:
-                        robot.forward((1.5 - dis2workbench) * 50)
-                        robot.rotate(delta_theta_robot2rival)
+                    if dis_workbench2robot < self.define_dis and dis_workbench2robot < dis_workbench2rival: # and abs(delta_theta_robot2rival) < math.pi / 4:
+                        if abs(delta_theta_robot2rival) > math.pi / 6:
+                        # 角度相差较大 原地转向
+                            robot.forward(0)
+                        else:
+                            robot.forward(max((1.5 - dis2workbench), 0) * 50)
+                        robot.rotate(delta_theta_robot2rival*k_r)
                         # sys.stderr.write('干！\n')
                     else:
                         # 和敌方机器人同时争抢进入工作台
@@ -1924,7 +1939,7 @@ class Controller:
 
                 robot.rotate(delta_theta_robot2workbench * k_r)
 
-                if loc_rival is None or dis_workbench2rival > 4:
+                if loc_rival is None or dis_workbench2rival > self.define_dis:
                     # 敌人被打跑
                     robot.attack_status = Robot.BCK_TO_ATTACK
 
