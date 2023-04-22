@@ -1765,7 +1765,7 @@ class Controller:
 
         # 控制参数：
         k_r = 8  # 定位旋转时的比例控制系数
-        k_f = 3  # 定位前进时的比例控制系数
+        k_f = 10  # 定位前进时的比例控制系数
         thr_near_target = 5  # 小于此角度不避让对方机器人
 
         #  取出机器人的引用
@@ -1883,6 +1883,7 @@ class Controller:
                         robot.forward(0)
                     elif self.target_slow(idx_robot, target_idx, target_loc, col_flag, sb_flag, sb_safe_dis):
                         # 慢速行驶至目标
+                        # sys.stderr.write('slow\n')
                         robot.forward(dis_target * k_f)
                     else:
                         # 高速行驶至目标
@@ -1923,7 +1924,7 @@ class Controller:
                         # 角度相差较大 原地转向
                             robot.forward(0)
                         else:
-                            robot.forward(max((1.5 - dis2workbench), 0) * 50)
+                            robot.forward(max((2 - dis2workbench), 0) * 50)
                         robot.rotate(delta_theta_robot2rival*k_r)
                         # sys.stderr.write('干！\n')
                     else:
@@ -2090,7 +2091,7 @@ class Controller:
             # 两个向量的夹角
             theta = np.arccos(np.dot(vec_robot2target, vec_target2next) /
                               (np.linalg.norm(vec_robot2target) * np.linalg.norm(vec_target2next)))
-            if theta > math.pi * 0.4:
+            if theta > math.pi * 0.22:
                 return True
             else:
                 return False
