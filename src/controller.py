@@ -2412,7 +2412,7 @@ class Controller:
                 # 在工作台附近才减分
                 elif robot.block_type == Robot.BLOCK_TYPE_SENTINEL and self.dis2target(idx_robot) < 1.5:
                     r_w.attack_value -= 1
-                    if r_w.attack_value == 0 or robot:
+                    if r_w.attack_value == 0:
                         self.attack_one(robot)
                 elif robot.block_type == Robot.BLOCK_TYPE_PATORL and self.dis2target(idx_robot) < 0.5:
                     sys.stderr.write(f'robotID:{robot.ID}, block_workbench_index{robot.block_workbench_index}\n')
