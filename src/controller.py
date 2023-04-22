@@ -328,12 +328,12 @@ class Controller:
             if len(zz_robots) == 4:
                 # 说明是地图4并且我方蓝方
                 self.map_type = self.MAP_TYPE_4V4
-                self.define_dis = 10
+                self.define_dis = 30
                 Workbench.MAX_ATTCK_VALUE = 200 # 加大切换频率
             else:
                 # 说明是地图2
                 self.map_type = self.MAP_TYPE_3V1
-                self.define_dis = 10
+                self.define_dis = 30
                 Workbench.MAX_ATTCK_VALUE = 200 # 加大切换频率
             for _ in range(len(self.other_workbenchs_order)):
                 workbench_block = self.other_workbenchs_order.popleft()
@@ -1819,7 +1819,7 @@ class Controller:
         thr_theta_dog = self.thr_theta_dog
         loc_rival, r_rival, dis_workbench2rival, theta_workbench2rival, dis_workbench2robot, theta_workbench2robot, dis_robot2rival, delta_theta_robot2rival = self.get_nearst_rival2workbench(
             idx_robot, offset)
-        # ''' 开始狗相关
+        ''' 开始狗相关
         flag_dog, d_theta_dog, dog_rival_loc = self.are_you_dog(idx_robot, delta_theta_robot2workbench, math.pi * 0.25, thr_theta_dog)
         if flag_dog and not robot.dog_status:
             robot.dog_status = True
@@ -1853,7 +1853,7 @@ class Controller:
             robot.rotate(d_theta_dog*k_r)
             robot.forward(9)
             return
-        # 结束狗相关 '''
+        结束狗相关 '''
 
         if robot.status == Robot.BLOCK_OTRHER:
             # 干扰敌人的机器人
@@ -1907,38 +1907,44 @@ class Controller:
                     # 原地旋转预瞄准
                     robot.rotate(delta_theta_robot2rival * k_r)
 
-                    if dis_workbench2rival < 4:
+                    if dis_workbench2rival < self.define_dis:
                         # 敌人过于靠近工作台，切换为攻击状态
                         robot.attack_status = Robot.ATTACK
-                elif dis_workbench2robot > 0.2:
-                    # 未知原因变远了， 切换回
-                    robot.attack_status = Robot.MOV_TO_ATTACK
+                # elif dis_workbench2robot > 0.2:
+                #     # 未知原因变远了， 切换回
+                #     robot.attack_status = Robot.MOV_TO_ATTACK
             if robot.attack_status == Robot.ATTACK:
                 # 攻击敌人 金钟罩
 
 
                 if loc_rival is not None:
                     # debug 并且约束攻击距离
-                    if dis_workbench2robot < self.define_dis and dis_workbench2robot < dis_workbench2rival: # and abs(delta_theta_robot2rival) < math.pi / 4:
+                    if  self.map_type in [self.MAP_TYPE_4V4, self.MAP_TYPE_3V1]:
                         if abs(delta_theta_robot2rival) > math.pi / 6:
-                        # 角度相差较大 原地转向
-                            robot.forward(0)
-                        else:
-                            robot.forward(max((2 - dis2workbench), 0) * 50)
-                        robot.rotate(delta_theta_robot2rival*k_r)
-                        # sys.stderr.write('干！\n')
-                    else:
-                        # 和敌方机器人同时争抢进入工作台
-                        # sys.stderr.write(delta_theta_robot_sub_rival)
-                        if abs(delta_theta_robot2workbench) > math.pi / 6:
                             # 角度相差较大 原地转向
                             robot.forward(0)
                         else:
-                            robot.forward(9)
-                        robot.rotate(delta_theta_robot2workbench * k_r)
+                            robot.forward(dis_robot2rival*k_f)
+                        robot.rotate(delta_theta_robot2rival*k_r)
+                    else:
+                        if dis_workbench2robot < self.define_dis and dis_workbench2robot < dis_workbench2rival: # and abs(delta_theta_robot2rival) < math.pi / 4:
+                            if abs(delta_theta_robot2rival) > math.pi / 6:
+                            # 角度相差较大 原地转向
+                                robot.forward(0)
+                            else:
+                                robot.forward(max((2 - dis2workbench), 0) * 50)
+                            robot.rotate(delta_theta_robot2rival*k_r)
+                            # sys.stderr.write('干！\n')
+                        else:
+                            # 和敌方机器人同时争抢进入工作台
+                            # sys.stderr.write(delta_theta_robot_sub_rival)
+                            if abs(delta_theta_robot2workbench) > math.pi / 6:
+                                # 角度相差较大 原地转向
+                                robot.forward(0)
+                            else:
+                                robot.forward(9)
+                            robot.rotate(delta_theta_robot2workbench * k_r)
 
-
-                robot.rotate(delta_theta_robot2workbench * k_r)
 
                 if loc_rival is None or dis_workbench2rival > self.define_dis:
                     # 敌人被打跑
