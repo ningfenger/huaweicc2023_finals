@@ -1657,7 +1657,6 @@ class Controller:
                             else:
                                 robot.forward(max((2 - dis_workbench2robot), 0) * 50)
                             robot.rotate(delta_theta_robot2rival*k_r)
-                            # sys.stderr.write('干！\n')
                         else:
                             # 和敌方机器人同时争抢进入工作台
                             # sys.stderr.write(delta_theta_robot_sub_rival)
@@ -1707,7 +1706,6 @@ class Controller:
                     robot.attack_status = Robot.WAIT_TO_ATTACK
 
                 if loc_rival is not None and abs(dis_workbench2robot - dis_target) > 0.01:
-                    sys.stderr.write('1')
                     robot.attack_status = Robot.MOV_TO_ATTACK
 
         else:
