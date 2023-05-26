@@ -270,11 +270,11 @@ class Workmap:
                 if self.map_gray[i][j] < self.BROAD_ROAD or (i, j) in self.broad_shifting:
                     continue
                 # 十字区域都是宽路即可
-                for x, y in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                    if self.map_gray[i+x][j+y] < self.BROAD_ROAD or (i+x, j+y) in self.broad_shifting:
-                        break
-                else:
-                    self.map_gray[i][j] = self.SUPER_BROAD_ROAD
+                # for x, y in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                #     if self.map_gray[i+x][j+y] < self.BROAD_ROAD or (i+x, j+y) in self.broad_shifting:
+                #         break
+                # else:
+                self.map_gray[i][j] = self.SUPER_BROAD_ROAD
 
     def robot2workbench(self, blue):
         '''

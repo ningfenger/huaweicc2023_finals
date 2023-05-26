@@ -541,98 +541,6 @@ class Controller:
         robot.update_frame_pisition(frame)
         robot.is_stuck = False
 
-    def radar(self, idx_robot, d_theta):
-        # 当前位置与朝向
-        point = self.robots[idx_robot].loc
-        theta = self.robots[idx_robot].toward + d_theta
-        theta = (theta + math.pi) % (2 * math.pi) - math.pi
-        # 当前位置所处的格子
-        # raw, col = int(round(point[1] * 2 - 0.5)), int(round(point[0] * 2 - 0.5))
-        raw, col = int(point[1] // 0.5), int(point[0] // 0.5)
-
-        # 取出所有边界点
-        if theta == 0:
-            # 正右
-            x_set_all = np.arange(col + 1, min(col + 4, 99), 1) * 0.5
-            y_set_all = np.ones_like(x_set_all) * point[1]
-        elif theta == math.pi / 2:
-            # 正上
-            y_set_all = np.arange(raw + 1, min(raw + 4, 99), 1) * 0.5
-            x_set_all = np.ones_like(y_set_all) * point[0]
-        elif theta == math.pi:
-            # 正左
-            x_set_all = np.arange(col, max(col - 3, 0), -1) * 0.5
-            y_set_all = np.ones_like(x_set_all) * point[1]
-        elif theta == -math.pi / 2:
-            # 正下
-            y_set_all = np.arange(raw, max(raw - 3, 0), -1) * 0.5
-            x_set_all = np.ones_like(y_set_all) * point[0]
-        else:
-            # 其他方向
-
-            # x方向栅格点集
-            if -math.pi / 2 < theta < math.pi / 2:
-                # 1 4 象限
-                x_set_xgrid = np.arange(col + 1, min(col + 4, 99), 1) * 0.5
-            else:
-                # 2 3 象限
-                x_set_xgrid = np.arange(col, max(col - 3, 0), -1) * 0.5
-            y_set_xgrid = np.tan(theta) * (x_set_xgrid - point[0]) + point[1]
-
-            # y方向栅格点集
-            if 0 < theta < math.pi:
-                # 1 2 象限
-                y_set_ygrid = np.arange(raw + 1, min(raw + 4, 99), 1) * 0.5
-
-            else:
-                # 3 4 象限
-                y_set_ygrid = np.arange(raw, max(raw - 3, 0), -1) * 0.5
-            x_set_ygrid = 1 / np.tan(theta) * \
-                (y_set_ygrid - point[1]) + point[0]
-            x_set_all = np.concatenate((x_set_xgrid, x_set_ygrid))
-            y_set_all = np.concatenate((y_set_xgrid, y_set_ygrid))
-
-            # 得到排序后的索引
-            idx = np.argsort(y_set_all)
-            # 将坐标按照排序后的索引进行排序
-            if theta < 0:
-                x_set_all = x_set_all[idx]
-                y_set_all = y_set_all[idx]
-            else:
-                x_set_all = x_set_all[idx[::-1]]
-                y_set_all = y_set_all[idx[::-1]]
-
-        # 取出所有边界点↑
-        x_set_near = x_set_all[:-1]
-        x_set_far = x_set_all[1:]
-
-        y_set_near = y_set_all[:-1]
-        y_set_far = y_set_all[1:]
-
-        x_set_mid = (x_set_near + x_set_far) / 2
-        y_set_mid = (y_set_near + y_set_far) / 2
-
-        mask = np.zeros_like(x_set_mid, dtype=bool)
-        mask[(x_set_mid >= 0) & (x_set_mid <= 50) & (
-            y_set_mid >= 0) & (y_set_mid <= 50)] = True
-        x_set_mid = x_set_mid[mask]
-        y_set_mid = y_set_mid[mask]
-        idx_ob = -1
-        for i_point in range(len(x_set_mid)):
-            x = x_set_mid[i_point]
-            y = y_set_mid[i_point]
-            raw, col = tools.cor2rc(x, y)
-
-            if self.m_map_arr[raw, col] == 0:
-                idx_ob = i_point
-                break
-
-        if idx_ob == -1:
-            return 100
-        else:
-            # 障碍物距离
-            return np.sqrt((x_set_near[idx_ob] - point[0]) ** 2 + (y_set_near[idx_ob] - point[1]) ** 2)
-
     def could_run(self, loc0, loc1, carry_flag):
         # 位置0到位置1区间是否有符合要求
 
@@ -1038,142 +946,6 @@ class Controller:
                 return False
         return True
 
-
-    def select_target_4(self, idx_robot):
-        # 4条线
-
-        # 取出机器人
-        robot = self.robots[idx_robot]
-
-        # 取出机器人坐标 质心
-        robot_loc_m = np.array(robot.loc).copy()
-
-        # 取出目标点坐标
-        path_loc_m = robot.path.copy()
-
-        # 计算机器人到目标点的向量
-        vec_r2p = robot_loc_m - path_loc_m
-
-        # 计算机器人到目标点的距离
-        dis_r2p = np.sqrt(np.sum(vec_r2p ** 2, axis=1))
-
-        # 选取距离小于40 大于0.3的mask
-        mask_greater = dis_r2p < 40
-        mask_smaller = 0.3 < dis_r2p
-        mask = mask_greater & mask_smaller
-
-        # 选取距离小于40 大于0.3的点
-        path_loc_m = path_loc_m[mask]
-
-        # 判断是否携带物品，并计算相应半径
-        if self.robots[idx_robot].item_type == 0:
-            carry_flag = False
-            width = 0.46
-        else:
-            carry_flag = True
-            width = 0.54
-
-        # robot_loc_m 指向各个点的方向
-        theta_set = np.arctan2(
-            path_loc_m[:, 1] - robot_loc_m[1], path_loc_m[:, 0] - robot_loc_m[0]).reshape(-1, 1)
-
-        # 方向左旋90度
-        theta_l_set = theta_set + math.pi / 2
-
-        # 方向右旋90度
-        theta_r_set = theta_set - math.pi / 2
-
-        # 计算左右两边的点 4个点把宽度3等分
-        robot_loc_l1 = robot_loc_m + 1 / 3 * width * \
-                       np.concatenate((np.cos(theta_l_set), np.sin(theta_l_set)), axis=1)
-        robot_loc_l2 = robot_loc_m + width * \
-                       np.concatenate((np.cos(theta_l_set), np.sin(theta_l_set)), axis=1)
-        robot_loc_r1 = robot_loc_m + 1 / 3 * width * \
-                       np.concatenate((np.cos(theta_r_set), np.sin(theta_r_set)), axis=1)
-        robot_loc_r2 = robot_loc_m + width * \
-                       np.concatenate((np.cos(theta_r_set), np.sin(theta_r_set)), axis=1)
-
-        path_loc_l1 = path_loc_m + 1 / 3 * width * \
-                      np.concatenate((np.cos(theta_l_set), np.sin(theta_l_set)), axis=1)
-        path_loc_l2 = path_loc_m + width * \
-                      np.concatenate((np.cos(theta_l_set), np.sin(theta_l_set)), axis=1)
-        path_loc_r1 = path_loc_m + 1 / 3 * width * \
-                      np.concatenate((np.cos(theta_r_set), np.sin(theta_r_set)), axis=1)
-        path_loc_r2 = path_loc_m + width * \
-                      np.concatenate((np.cos(theta_r_set), np.sin(theta_r_set)), axis=1)
-        len_path = path_loc_m.shape[0]
-
-        detect_l1 = np.full(len_path, False)
-        detect_l2 = np.full(len_path, False)
-        detect_r1 = np.full(len_path, False)
-        detect_r2 = np.full(len_path, False)
-
-        for idx_point in range(len_path):
-            # 共4条线的判断
-            loc0 = robot_loc_l1[idx_point, :]
-            loc1 = path_loc_l1[idx_point, :]
-            detect_l1[idx_point] = self.obt_detect(loc0, loc1)
-
-            loc0 = robot_loc_l2[idx_point, :]
-            loc1 = path_loc_l2[idx_point, :]
-            detect_l2[idx_point] = self.obt_detect(loc0, loc1)
-
-            loc0 = robot_loc_r1[idx_point, :]
-            loc1 = path_loc_r1[idx_point, :]
-            detect_r1[idx_point] = self.obt_detect(loc0, loc1)
-
-            loc0 = robot_loc_r2[idx_point, :]
-            loc1 = path_loc_r2[idx_point, :]
-            detect_r2[idx_point] = self.obt_detect(loc0, loc1)
-
-
-        detect_all = detect_l1 & detect_l2 & detect_r1 & detect_r2
-        detect_m = detect_l1 | detect_r1
-
-        if detect_all.any():
-            m_index = np.where(detect_all)[0]
-            idx_target = m_index[len(m_index) - 1]
-            target_point = path_loc_m[idx_target, :]
-            idx_point = np.where(mask)[0][idx_target]
-        # elif detect_2.any():
-        #     m_index = np.where(detect_2)[0]
-        #     idx_target = m_index[len(m_index) - 1]
-        #     target_point = path_loc_m[idx_target, :]
-        #     idx_point = np.where(mask)[0][idx_target]
-        else:
-            idx_target = robot.find_temp_tar_idx()
-            target_point = robot.path[idx_target, :]
-            idx_point = idx_target
-        # ,
-        # 修正select导致在墙角导致回头的现象：
-        # 如果机器人已经选中的点下一个点并接近选中点的下一个点
-        # 强条件修正
-        if idx_point < len(robot.path) - 1:
-            # 取出机器人坐标
-            point_robot = np.array(robot.loc)
-
-            # 取出当前点
-            target_point_this = robot.path[idx_target, :]
-
-            # 取出下一个点
-            target_point_next = robot.path[idx_target + 1, :]
-
-            # 下一个点和当前点的距离
-            dis_this2next = np.sqrt(np.sum((target_point_next - target_point_this) ** 2))
-
-            # 下一个点和机器人的距离
-            dis_robot2next = np.sqrt(np.sum((target_point_next - point_robot) ** 2))
-
-            if dis_robot2next < dis_this2next:
-                # 如果下一个点和机器人的距离小于当前点和下一个点的距离
-                # 则将下一个点作为目标点
-                target_point = target_point_next
-                idx_point = idx_target + 1
-
-        # 修正结束
-
-        return target_point, idx_point
-
     def has_obt_4(self, idx_robot, robot_loc_m):
         # 4条线
 
@@ -1301,55 +1073,6 @@ class Controller:
         # 判断是否路上侧向撞上其他机器人
         # 判断是否同时到终点僵持
         return d
-
-    def direct_colli(self, idx_robot, idx_other, thr_dis=4, thr_theta=math.pi / 5):
-        robot_this = self.robots[idx_robot]
-        robot_other = self.robots[idx_other]
-
-        raw, col = self.m_map.loc_float2int(*robot_this.loc)
-
-        # 要在大空地 且 离目标工作台足够远
-        if self.m_map_arr[raw, col] == Workmap.SUPER_BROAD_ROAD and self.dis2target(idx_robot) > 5:
-
-            loc_this = np.array(robot_this.loc)
-            loc_other = np.array(robot_other.loc)
-            vec_this2other = loc_other - loc_this
-            vec_other2this = loc_this - loc_other
-
-            dis = np.sqrt(np.dot(vec_this2other, vec_this2other))
-
-            # 距离要足够近
-            if dis < thr_dis:
-                #############################
-                # 本机器人头朝向
-                theta_toward_this = robot_this.toward
-
-                # 本机器人速度朝向
-                speed_vec_this = np.array(robot_this.speed)
-                theta_speed_this = np.arctan2(
-                    speed_vec_this[1], speed_vec_this[0])
-
-                # 本机器人 对方相对于自身朝向
-                theta_robot_this = np.arctan2(
-                    vec_this2other[1], vec_this2other[0])
-
-                #############################
-                # 其他机器人头朝向
-                theta_toward_other = robot_other.toward
-
-                # 其他机器人速度朝向
-                speed_vec_other = np.array(robot_other.speed)
-                theta_speed_other = np.arctan2(
-                    speed_vec_other[1], speed_vec_other[0])
-
-                # 其他机器人 自身相对于对方朝向
-                theta_robot_other = np.arctan2(
-                    vec_other2this[1], vec_other2this[0])
-
-                # 撞向对方的可能
-                if max(abs(theta_toward_this - theta_robot_this), abs(theta_speed_this - theta_robot_this), abs(theta_toward_other - theta_robot_other), abs(theta_speed_other - theta_robot_other)) < thr_theta:
-                    return True
-            return False
 
     def AF(self, loc_robot):
         row, col = self.m_map.loc_float2int(loc_robot[0], loc_robot[1])
@@ -1576,7 +1299,8 @@ class Controller:
         # True 周围无障碍物 False 周围有障碍物
         flag_obt_near = self.obt_near(robot)
         if flag_obt_near:
-            target_loc, target_idx = self.select_target_4(idx_robot)
+            # target_loc, target_idx = self.select_target_4(idx_robot)
+            target_loc, target_idx = self.select_target(idx_robot)
         else:
             target_idx = robot.find_temp_tar_idx()
             target_loc = robot.path[target_idx, :]
@@ -1762,7 +1486,8 @@ class Controller:
 
     def move(self, idx_robot):
         # 新版move
-
+        # if self.frame_id%2!=idx_robot%2:
+        #     return
         # 控制参数：
         k_r = 8  # 定位旋转时的比例控制系数
         k_f = 10  # 定位前进时的比例控制系数
@@ -1793,8 +1518,8 @@ class Controller:
         # flag：True 有障碍物 False 无障碍物
         # theta_avoid_obt：避让障碍物的角度 偏移角度
         # try:
-        # flag_avoid_obt, d_theta_avoid_obt = robot.avoid_obt(t=0.5, target_loc=target_loc,
-                                                            # flag_avoid_rival=flag_avoid_rival)
+        flag_avoid_obt, d_theta_avoid_obt = robot.avoid_obt(t=0.5, target_loc=target_loc,
+                                                            flag_avoid_rival=flag_avoid_rival)
         flag_avoid_obt = False
         d_theta_avoid_obt = 0
         # except:
@@ -1865,8 +1590,6 @@ class Controller:
                 my_r = 0.45
             else:
                 my_r = 0.53
-
-
             if robot.attack_status == Robot.MOV_TO_ATTACK:
                 # 前往干扰工作台的路上
                 if abs(delta_theta_robot2workbench) > math.pi * 0.65 and dis_workbench2robot < 2:
@@ -1932,7 +1655,7 @@ class Controller:
                             # 角度相差较大 原地转向
                                 robot.forward(0)
                             else:
-                                robot.forward(max((2 - dis2workbench), 0) * 50)
+                                robot.forward(max((2 - dis_workbench2robot), 0) * 50)
                             robot.rotate(delta_theta_robot2rival*k_r)
                             # sys.stderr.write('干！\n')
                         else:
@@ -1946,7 +1669,7 @@ class Controller:
                             robot.rotate(delta_theta_robot2workbench * k_r)
 
 
-                if loc_rival is None or dis_workbench2rival > self.define_dis:
+                if loc_rival is None and dis_workbench2rival > self.define_dis:
                     # 敌人被打跑
                     robot.attack_status = Robot.BCK_TO_ATTACK
 
@@ -2031,44 +1754,13 @@ class Controller:
                 if flag_rerun:
                     robot.bck_timer = self.frame_id
                     robot.bck_reRun_status = True
-                    # bck_loc = [0, 0]
-                    # bck_loc[0] = robot.loc[0] + np.cos(theta_workbench2robot) * 2
-                    # bck_loc[1] = robot.loc[1] + np.sin(theta_workbench2robot) * 2
-                    # if not self.has_obt_4(idx_robot, bck_loc):
-                    #     robot.bck_reRun = bck_loc
-                    #     sys.stderr.write(f'{robot.ID}：啊！！！！\n')
-                    #     robot.bck_reRun_status = True
-                    #     robot.bck_timer = 400
-                    # else:
-                        # 找不到
-                        # self.re_mession(robot)
             else:
                 # 在反复冲撞中
                 robot.bck_timer -= 1
-                # if robot.bck_reRun_status == False:
-                # sys.stderr.write(f'{robot.bck_reRun_status}\n')
-                # bck_vec = [robot.bck_reRun[0] - robot.loc[0],
-                #               robot.bck_reRun[1] - robot.loc[1]]
-                # dis_bck = np.sqrt(np.dot(bck_vec, bck_vec))
-                #
-                # bck_theta = np.arctan2(
-                #     bck_vec[1], bck_vec[0])
-                #
-                # robot_theta = self.robots[idx_robot].toward
-                # delta_theta_robot2bck = bck_theta - robot_theta + math.pi
-                # delta_theta_robot2bck = (delta_theta_robot2bck +
-                #                                math.pi) % (2 * math.pi) - math.pi
-                # robot.rotate(delta_theta_robot2bck * k_r)
-                # robot.forward(- dis_bck * k_f)
-                # if dis_bck < 0.2 or robot.bck_timer <= 0:
-                #     robot.bck_reRun_status = False
                 robot.rotate(delta_theta_robot2workbench)
                 robot.forward(-2)
                 if self.frame_id - robot.bck_timer > 150:
                     robot.bck_reRun_status = False
-
-
-
 
     def target_slow(self, idx_robot, target_idx, target_loc, col_flag, sb_flag, sb_safe_dis):
         # 判断目标点是否需要减速
@@ -2104,187 +1796,6 @@ class Controller:
         else:
             # 这是啥？
             return False
-
-    def move_bck(self, idx_robot):
-
-        # 360雷达前的版本
-        robot = self.robots[idx_robot]
-        k_r = 8
-        flag_obt_near = self.obt_near(robot)
-
-        # 到工作台距离 用于判定是否接近道路终点
-        dis2workbench = self.dis2target(idx_robot)
-
-        # 判定是否有临时目标点
-        if self.robots[idx_robot].target_loc is None:
-            # 没有临时目标点则重新规划
-            self.re_path(robot)
-            if flag_obt_near:
-                target_loc, target_idx = self.select_target(idx_robot)
-            else:
-                target_idx = robot.find_temp_tar_idx()
-                target_loc = robot.path[target_idx, :]
-            robot.target_loc = target_loc
-            robot.target_idx = target_idx
-        else:
-            # 有临时目标点
-            dis_temp_target = np.sqrt(
-                np.sum((robot.target_loc - np.array(robot.loc)) ** 2))
-            if (robot.frame_wait > 0 and dis_temp_target > 0.35) or (robot.frame_wait == 0 and dis_temp_target > 2):
-                # 距离大于给定值时 继续追踪
-                target_loc = robot.target_loc
-            else:
-                self.re_path(robot)
-                # 足够接近时 重新选择
-                if flag_obt_near:
-                    target_loc, target_idx = self.select_target(idx_robot)
-                else:
-                    target_idx = robot.find_temp_tar_idx()
-                    target_loc = robot.path[target_idx, :]
-                robot.target_loc = target_loc
-                robot.target_idx = target_idx
-        # 因为移动过程中可能导致阻塞而避让, 可以解除顶牛, 可能导致HUQ
-        col_flag = False
-        # 因为买卖而产生的避让
-        sb_flag = False
-        # 是否要采取保持距离的方式
-        sb_safe_dis = False
-        d = 100
-        # 要避让的机器人序号
-        idx_huq = -1
-        for idx_other in range(4):
-            if not idx_other == idx_robot:
-                d = min(self.get_other_col_info2(
-                    idx_robot, idx_other), d)
-                if d < self.WILL_CLASH_DIS:
-                    col_flag = True
-                    idx_huq = idx_other
-                    break
-        robot_target = robot.target
-        # 初始化一个较大值
-        other_dis2workbench = self.WILL_HUQ_DIS
-
-        if dis2workbench < self.WILL_HUQ_DIS and not col_flag and robot.status in [Robot.MOVE_TO_BUY_STATUS,
-                                                                                   Robot.WAIT_TO_BUY_STATUS]:
-            for idx_other in range(4):
-                # 锐总说这不合适吧
-                if (not idx_other == idx_robot) and self.robots[idx_other].frame_wait == 0 and robot_target == \
-                        self.robots[idx_other].target:
-                    # 另一个机器人到工作台的距离
-                    other_dis2workbench = self.dis2target(idx_other)
-                    status_other = self.robots[idx_other].status
-                    if other_dis2workbench > self.WILL_HUQ_DIS:
-                        continue
-                    # 买的让卖的
-                    if status_other in [Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS]:
-                        sb_flag = True
-                    # 同买, 近的让远的
-                    elif status_other in [Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS]:
-                        if dis2workbench > other_dis2workbench:
-                            sb_flag = True
-                        elif dis2workbench == other_dis2workbench and idx_robot > idx_other:
-                            sb_flag = True
-                    if sb_flag:
-                        idx_huq = idx_other
-                        break
-        if sb_flag and dis2workbench > other_dis2workbench:
-            sb_safe_dis = True
-
-        if col_flag or (sb_flag and not sb_safe_dis):
-            priority_idx = -1
-            if col_flag:
-                status_huq = self.robots[idx_huq].status
-                huq_dis2workbench = self.dis2target(idx_huq)
-                if robot_target == self.robots[idx_huq].target:
-                    # 我买对方卖
-                    if robot.status in [Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS] and status_huq in [
-                            Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS]:
-                        priority_idx = idx_robot
-                    # 我卖对方买
-                    elif robot.status in [Robot.MOVE_TO_SELL_STATUS, Robot.WAIT_TO_SELL_STATUS] and status_huq in [
-                            Robot.MOVE_TO_BUY_STATUS, Robot.WAIT_TO_BUY_STATUS]:
-                        priority_idx = idx_huq
-                    # 同买同卖
-                    else:
-                        if dis2workbench > huq_dis2workbench:
-                            priority_idx = idx_robot
-                        elif dis2workbench < huq_dis2workbench:
-                            priority_idx = idx_huq
-            else:
-                priority_idx = idx_robot
-            self.re_path(robot)
-            self.re_path(self.robots[idx_huq])
-            avoid_idx, avoid_path = self.process_deadlock(
-                idx_robot, idx_huq, priority_idx)
-            # sys.stderr.write(f"avoid_idx: {avoid_idx}\n")
-            if avoid_idx == -1:
-                # sys.stderr.write(
-                #     f"REVERSE idx_robot: {idx_robot}\n")
-                # 如果出现可能有坑 一个机器人堵了两个机器人
-                sb_safe_dis = True
-                pass
-            elif avoid_idx == idx_robot:
-                # sys.stderr.write(f"idx_robot{idx_robot}, robot.item{robot.item_type}, avoid_path{avoid_path}\n")
-                self.robots[idx_robot].set_path(avoid_path)
-                self.robots[idx_robot].frame_wait = self.AVOID_FRAME_WAIT
-                # sys.stderr.write(f"idx_robot: {idx_robot}\n")
-                flag_obt_near = self.obt_near(robot)
-                if flag_obt_near:
-                    target_loc, target_idx = self.select_target(
-                        idx_robot)
-                else:
-                    target_idx = robot.find_temp_tar_idx()
-                    target_loc = robot.path[target_idx, :]
-                robot.target_loc = target_loc
-                robot.target_idx = target_idx
-
-        # 根据给定目标点修正
-        target_vec = [target_loc[0] - robot.loc[0],
-                      target_loc[1] - robot.loc[1]]
-        dis_target = np.sqrt(np.dot(target_vec, target_vec))
-
-        target_theta = np.arctan2(
-            target_vec[1], target_vec[0])
-
-        robot_theta = self.robots[idx_robot].toward
-        delta_theta = target_theta - robot_theta
-
-        # 不确定用处大不大，暂时保留
-        # for idx_other in range(4):
-        #     if not idx_other == idx_robot:
-        #         if self.direct_colli(idx_robot, idx_other, thr_dis=6):
-        #             delta_theta -= math.pi / 5
-        #             break
-
-        if dis2workbench < 3 and robot.status == Robot.BLOCK_OTRHER and 0:
-            print("forward", idx_robot, dis2workbench * 3)
-            self.robots[idx_robot].rotate(delta_theta * k_r)
-            # sys.stderr.write("干死他\n")
-            pass
-        else:
-            delta_theta = (delta_theta +
-                           math.pi) % (2 * math.pi) - math.pi
-            if sb_safe_dis:
-                # 保持安全车距等待买卖
-                print("forward", idx_robot, (d - self.WILL_CLASH_DIS-0.1) * 6)
-            # elif abs(delta_theta) > math.pi * 5 / 6 and dis_target < 2:
-            #     # 角度相差太大倒车走
-            #     print("forward", idx_robot, -2)
-            #     # delta_theta += math.pi
-            elif abs(delta_theta) > math.pi / 6:
-                # 角度相差较大 原地转向
-                print("forward", idx_robot, 0)
-            elif dis2workbench < 1.5:
-
-                print("forward", idx_robot, dis2workbench * 6)
-
-            else:
-                print("forward", idx_robot, (dis_target) * 10)
-
-            delta_theta = (delta_theta +
-                           math.pi) % (2 * math.pi) - math.pi
-
-            self.robots[idx_robot].rotate(delta_theta * k_r)
 
     def get_time_rate(self, frame_sell: float) -> float:
         # 计算时间损失

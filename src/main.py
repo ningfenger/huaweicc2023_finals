@@ -1,7 +1,7 @@
 # coding=utf-8
 import sys
 import time
-
+import subprocess
 from workmap import Workmap
 from robot import Robot
 from workbench import Workbench
@@ -23,6 +23,10 @@ def finish():
 
 if __name__ == '__main__':
     # time.sleep(10)
+    # argv = sys.argv
+    # if len(argv) <= 1:
+    #     subprocess.run(["/usr/local/bin/pypy", "main.py", "restart"], cwd='./', shell=False, timeout=300)
+    # elif len(argv) == 2 and argv[1] == 'restart':
     workmap = Workmap()
     robots: List[Robot] = []  # 机器人列表
     workbenchs: List[Workbench] = []  # 工作台列表
